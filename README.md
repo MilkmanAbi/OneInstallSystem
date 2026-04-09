@@ -18,6 +18,11 @@ OIS is one folder you drop into your project. It handles the entire lifecycle â€
 
 ---
 
+## Example Project using OIS, installable on macOS, Linux
+https://github.com/MilkmanAbi/OIS-TestRepo
+
+---
+
 ## Quick start for users
 
 ```bash
@@ -69,7 +74,7 @@ your-project/
 # Option A: git submodule (recommended â€” you get OIS updates automatically)
 git submodule add https://github.com/MilkmanAbi/OneInstallSystem OIS
 
-# Option B: just copy the folder
+# Option B: just copy the folder (Easier, honestly just do this, it's more than fine if you wanna keep using OIS 1.0.0  for consistency, no issues whatsoever.)
 cp -r /path/to/OIS ./OIS
 ```
 
