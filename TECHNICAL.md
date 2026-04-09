@@ -4,6 +4,7 @@
 
 This document covers OIS internals, the full API surface, how integration works,
 how to build OIS-aware apps, and how to extend or embed OIS in your own tooling.
+Feel free to delete this markdown file, just for your reference.
 
 ---
 
