@@ -4,6 +4,8 @@ Sharing a project on GitHub is easy. Making it *installable* on every Unix — L
 
 OIS is one folder you drop into your project. It handles the entire lifecycle — install, update, uninstall, reinstall — on every Unix, automatically. Your users run one command. You write one config file.
 
+OIS isn't hard to use or complex, any AI could even help you integrate OIS into your project since OIS is so simple, if you're interested but hesistant to read so much, AI can help you.
+
 ---
 
 ## What it does
