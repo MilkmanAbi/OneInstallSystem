@@ -5,6 +5,8 @@
 **Repository:** https://github.com/MilkmanAbi/OneInstallSystem  
 **License:** MIT
 
+> Feel free to delete this markdown file, just for your reference.
+
 ---
 
 ## Table of Contents
