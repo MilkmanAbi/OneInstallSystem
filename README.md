@@ -2,6 +2,10 @@
 
 > OIS 2.0.0 breaks compatibility with 1.0.0. 1.0.0 does not have the required ABI or logic to cleanly migrate to 2.0.0 unfortunately - Internal Reference, AAS.
 
+---
+
+> The AI-Reference docs exist to help people integrate OIS easier, if you're lazy just ask AI, I guess, made the doc to just make life a bit easier
+
 **v2.0.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD
 
 A drop-in installer, updater, and uninstaller for your app. Pure POSIX
