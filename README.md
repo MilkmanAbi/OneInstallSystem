@@ -85,7 +85,7 @@ sh dash busybox-ash mksh ksh bash--posix    154 tests, 0 failures on each
 | [Commands](docs/05-COMMANDS.md) | CLI reference. |
 | [Errors](docs/06-ERRORS.md) | Every code and what to do about it. |
 | [Lifecycle](docs/07-LIFECYCLE.md) | Hooks, migrations, services, channels, signing, multi-binary. |
-| [AI-CONTEXT](docs/AI-CONTEXT.md) | Dense reference for LLM agents. |
+| [AI-CONTEXT](docs/AI-CONTEXT.md) | Reference for AI if you're lazy |
 
 Working examples in [`examples/`](examples/): CMake, Make, Go, Rust, a
 **daemon** (hooks + service + migration), and a **multi-binary** suite.
