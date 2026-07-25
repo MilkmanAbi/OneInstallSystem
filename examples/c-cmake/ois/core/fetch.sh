@@ -134,15 +134,36 @@ backoff_until=0
 EOF
 }
 
+# -- Channel filtering -------------------------------------------------
+# stable : no prerelease suffix               (v1.2.3)
+# beta   : stable plus -beta/-rc/-pre tags    (v1.3.0-rc1)
+# any    : every tag                          (nightlies included)
+ois_channel_accepts() {
+    _ca_ch="${1:-stable}" ; _ca_tag="$2"
+    case "$_ca_ch" in any|nightly) return 0 ;; esac
+    _ois_ver_split "$_ca_tag"
+    if [ -z "$V_PRE" ]; then return 0; fi
+    case "$_ca_ch" in
+        beta) case "$V_PRE" in
+                  beta*|rc*|pre*|alpha*) return 0 ;;
+              esac ;;
+    esac
+    return 1
+}
+
 # -- Latest release discovery ------------------------------------------
-# Primary: GET $BASE/OWNER/REPO/releases.atom
-#   entries carry  <id>tag:github.com,2008:Repository/NNN/TAG</id>
-# and the feed lists newest first, so the first <id> after the feed's
-# own is the latest release tag. Not part of the rate-limited API.
-# Fallback: GET $API/repos/OWNER/REPO/releases/latest -> "tag_name".
-# Prints the tag. Return: 0 ok, 1 no transport/parse, 22 http error.
+# Primary: GET $BASE/OWNER/REPO/releases.atom -- entries carry
+#   <id>tag:github.com,2008:Repository/NNN/TAG</id>
+# The feed is newest-first BY DATE, which is not newest by VERSION: a
+# v1.0.9 patch tagged after v2.0.0 appears first (this was a live bug in
+# v2, which took the first entry). We therefore collect every tag,
+# filter by channel, and take the maximum by version comparison.
+# Fallback: GET $API/repos/OWNER/REPO/releases/latest -> "tag_name"
+# (stable-ish only: GitHub excludes prereleases from /latest).
+# ois_latest_tag REPO [CHANNEL]. Prints the tag.
+# Return: 0 ok, 1 no transport/parse/none-matching, 22 http error.
 ois_latest_tag() {
-    _lt_repo="$1"
+    _lt_repo="$1" ; _lt_ch="${2:-stable}"
     _lt_tmp="$(ois_tmpfile)" || return 1
 
     if ois_fetch "$OIS_GITHUB_BASE/$_lt_repo/releases.atom" "$_lt_tmp"; then
@@ -152,7 +173,11 @@ ois_latest_tag() {
                 *'<id>'*'Repository/'*'</id>'*)
                     _lt_t="${_lt_l#*<id>}" ; _lt_t="${_lt_t%%</id>*}"
                     _lt_t="${_lt_t##*/}"
-                    [ -n "$_lt_t" ] && { _lt_tag="$_lt_t"; break; }
+                    [ -z "$_lt_t" ] && continue
+                    ois_channel_accepts "$_lt_ch" "$_lt_t" || continue
+                    if [ -z "$_lt_tag" ] || ois_ver_older "$_lt_tag" "$_lt_t"; then
+                        _lt_tag="$_lt_t"
+                    fi
                     ;;
             esac
         done < "$_lt_tmp"
@@ -182,6 +207,32 @@ ois_latest_tag() {
 # -- Payload URLs ------------------------------------------------------
 ois_url_source_tarball() { printf '%s/%s/archive/refs/tags/%s.tar.gz' "$OIS_GITHUB_BASE" "$1" "$2"; }
 ois_url_asset()          { printf '%s/%s/releases/download/%s/%s'     "$OIS_GITHUB_BASE" "$1" "$2" "$3"; }
+
+# -- Signature verification --------------------------------------------
+# When ois.conf pins a signing_key (a minisign/signify public key), the
+# release must ship SHA256SUMS.minisig and it must verify. This closes
+# the "MITM swaps both the asset and the sums" hole for UPDATES: the key
+# used is the one captured in the store at install time (trust on first
+# use -- stated plainly in the docs).
+# ois_sig_verify SUMS_FILE SIG_FILE KEY -> 0 verified, 1 bad, 2 no tool.
+ois_sig_verify() {
+    _gv_sums="$1" ; _gv_sig="$2" ; _gv_key="$3"
+    if command -v minisign >/dev/null 2>&1; then
+        minisign -Vm "$_gv_sums" -x "$_gv_sig" -P "$_gv_key" >/dev/null 2>&1 && return 0
+        return 1
+    fi
+    if command -v signify >/dev/null 2>&1; then
+        _gv_kf="$(ois_tmpfile)" || return 2
+        printf 'untrusted comment: ois signing key
+%s
+' "$_gv_key" > "$_gv_kf"
+        if signify -V -p "$_gv_kf" -x "$_gv_sig" -m "$_gv_sums" >/dev/null 2>&1; then
+            rm -f "$_gv_kf" ; return 0
+        fi
+        rm -f "$_gv_kf" ; return 1
+    fi
+    return 2
+}
 
 # -- SHA256SUMS verification -------------------------------------------
 # Verify FILE against a SHA256SUMS document, matched by basename.

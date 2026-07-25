@@ -76,6 +76,9 @@ ois_conf_load() {
     OIS_BUILD_TARGET="" OIS_BUILD_CMAKE_OPTS="" OIS_BUILD_MAKE_OPTS=""
     OIS_OWNS_CONFIG="" OIS_OWNS_DATA="" OIS_OWNS_CACHE="" OIS_OWNS_STATE=""
     OIS_OWNS_EXTRA="" OIS_DEPS_RAW="" OIS_DEPS_OPT_RAW=""
+    OIS_APP_CHANNEL="stable" OIS_SIGNING_KEY=""
+    OIS_SVC_ENABLE="" OIS_SVC_ARGS="" OIS_SVC_DESC="" OIS_SVC_RESTART="on-failure"
+    OIS_SVC_AFTER="network" OIS_BINARIES_RAW=""
 
     _cl_sec="main" _cl_n=0
     while IFS= read -r _cl_l || [ -n "$_cl_l" ]; do
@@ -91,6 +94,8 @@ ois_conf_load() {
                     '[deps.optional]') _cl_sec="depso" ;;
                     '[build]')         _cl_sec="build" ;;
                     '[owns]')          _cl_sec="owns"  ;;
+                    '[service]')       _cl_sec="svc"   ;;
+                    '[binaries]')      _cl_sec="bins"  ;;
                     *) ois_warn "$_cl_file:$_cl_n: unknown section $_cl_l"; _cl_sec="skip" ;;
                 esac
                 continue ;;
@@ -123,6 +128,15 @@ ois_conf_load() {
             main:update_mode)  OIS_APP_UPDATE_MODE="$_cl_v" ;;
             main:description)  OIS_APP_DESC="$_cl_v" ;;
             main:require_sudo) OIS_APP_REQUIRE_SUDO="$_cl_v" ;;
+            main:channel)      OIS_APP_CHANNEL="$_cl_v" ;;
+            main:signing_key)  OIS_SIGNING_KEY="$_cl_v" ;;
+            svc:enable)        OIS_SVC_ENABLE="$_cl_v" ;;
+            svc:args)          OIS_SVC_ARGS="$_cl_v" ;;
+            svc:description)   OIS_SVC_DESC="$_cl_v" ;;
+            svc:restart)       OIS_SVC_RESTART="$_cl_v" ;;
+            svc:after)         OIS_SVC_AFTER="$_cl_v" ;;
+            bins:*)            OIS_BINARIES_RAW="$OIS_BINARIES_RAW$_cl_k	$_cl_v
+" ;;
             build:system)      OIS_BUILD_SYSTEM="$_cl_v" ;;
             build:out)         OIS_BUILD_OUT="$_cl_v" ;;
             build:custom)      OIS_BUILD_CUSTOM="$_cl_v" ;;
@@ -145,6 +159,10 @@ ois_conf_load() {
     [ -n "$OIS_APP_BINARY" ]  || OIS_APP_BINARY="$OIS_APP_NAME"
     [ -n "$OIS_APP_DISPLAY" ] || OIS_APP_DISPLAY="$OIS_APP_NAME"
     [ -n "$OIS_BUILD_OUT" ]   || OIS_BUILD_OUT="$OIS_APP_BINARY"
+    ois_is_fname "$OIS_APP_BINARY" || {
+        ois_err "invalid binary name '$OIS_APP_BINARY' (no slashes, spaces, or special characters)"; return 1; }
+    ois_is_fname "$OIS_BUILD_OUT" || {
+        ois_err "invalid [build] out '$OIS_BUILD_OUT' (no slashes, spaces, or special characters)"; return 1; }
 
     # Defaults for [owns] so a config that declares nothing still gets
     # correct XDG ownership and a usable claim allowlist.
@@ -180,5 +198,7 @@ ois_conf_load() {
     export OIS_BUILD_TARGET OIS_BUILD_CMAKE_OPTS OIS_BUILD_MAKE_OPTS OIS_DEP_NAMES
     export OIS_OWNS_CONFIG OIS_OWNS_DATA OIS_OWNS_CACHE OIS_OWNS_STATE
     export OIS_OWNS_EXTRA OIS_DEPS_RAW OIS_DEPS_OPT_RAW
+    export OIS_APP_CHANNEL OIS_SIGNING_KEY OIS_BINARIES_RAW
+    export OIS_SVC_ENABLE OIS_SVC_ARGS OIS_SVC_DESC OIS_SVC_RESTART OIS_SVC_AFTER
     return 0
 }

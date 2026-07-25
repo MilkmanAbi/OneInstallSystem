@@ -52,7 +52,7 @@ while [ $i -le 10 ]; do
 done
 check "all 10 installs succeeded" "$failed" "0"
 
-. "$SRC/core/utils.sh"; . "$SRC/core/system.sh"; . "$SRC/core/store.sh"
+. "$SRC/core/utils.sh"; . "$SRC/core/system.sh"; . "$SRC/core/store.sh"; . "$SRC/core/errors.sh"; . "$SRC/core/hooks.sh"; . "$SRC/core/service.sh"
 export OIS_SCOPE=user
 n=0; for a in $(ois_app_list); do n=$(( n + 1 )); done
 check "store lists 10 apps" "$n" "10"

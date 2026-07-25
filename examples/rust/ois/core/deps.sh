@@ -284,6 +284,45 @@ ois_pm_install_cmd() {   # prints the install command for "$@" packages
     esac
 }
 
+# -- Installed version of a dependency ---------------------------------
+# Used by the lockfile. pkg-config is authoritative when it knows the
+# module; otherwise ask the package manager. "unknown" is a valid answer
+# and simply means that dependency cannot participate in drift checks.
+ois_dep_version() {
+    _dv_n="$1"
+    _dv_pc="$(ois_dep_attr "$_dv_n" pc)" || _dv_pc="$(ois_alias_pc "$_dv_n")" || _dv_pc=""
+    if [ -n "$_dv_pc" ] && command -v pkg-config >/dev/null 2>&1; then
+        _dv_v="$(pkg-config --modversion "$_dv_pc" 2>/dev/null)" && [ -n "$_dv_v" ] && {
+            printf '%s' "$_dv_v"; return 0; }
+    fi
+    _dv_p="$(ois_dep_package "$_dv_n")"
+    case "$OIS_PM" in
+        apt)     _dv_v="$(dpkg-query -W -f='${Version}' "$_dv_p" 2>/dev/null)" ;;
+        pacman)  _dv_v="$(pacman -Q "$_dv_p" 2>/dev/null | cut -d' ' -f2)" ;;
+        dnf|yum) _dv_v="$(rpm -q --qf '%{VERSION}' "$_dv_p" 2>/dev/null)" ;;
+        zypper)  _dv_v="$(rpm -q --qf '%{VERSION}' "$_dv_p" 2>/dev/null)" ;;
+        apk)     _dv_v="$(apk info -e --description "$_dv_p" 2>/dev/null | head -n 1 | cut -d' ' -f1)" ;;
+        brew)    _dv_v="$(brew list --versions "$_dv_p" 2>/dev/null | cut -d' ' -f2)" ;;
+        pkg)     _dv_v="$(pkg query '%v' "$_dv_p" 2>/dev/null)" ;;
+        xbps)    _dv_v="$(xbps-query -p pkgver "$_dv_p" 2>/dev/null)" ;;
+        *)       _dv_v="" ;;
+    esac
+    case "$_dv_v" in
+        ''|*[!0-9A-Za-z.:+~_-]*) ;;
+        *) printf '%s' "$_dv_v"; return 0 ;;
+    esac
+    # last resort: a tool that reports its own version. Sanitise the
+    # line -- it goes into the tab-separated lockfile, so strip tabs and
+    # keep it to one line (git prints "git version 2.40.1", etc).
+    _dv_c="$(ois_dep_attr "$_dv_n" cmd)" || _dv_c="$_dv_n"
+    if command -v "$_dv_c" >/dev/null 2>&1; then
+        _dv_v="$("$_dv_c" --version 2>/dev/null | head -n 1 | tr -d '\t')"
+        [ -n "$_dv_v" ] && { printf '%s' "$_dv_v"; return 0; }
+    fi
+    printf 'unknown'
+    return 0
+}
+
 # -- The check that install runs ---------------------------------------
 # Returns 0 if every REQUIRED dependency is satisfied (after an optional
 # install attempt), 1 otherwise. Optional deps only ever produce a note.

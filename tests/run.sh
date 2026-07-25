@@ -97,7 +97,7 @@ fi
 
 # ---------------------------------------------------------------------
 printf -- '\n-- v1 bug 1.9: # inside a value is destroyed --\n'
-. "$SRC/core/utils.sh"; . "$SRC/core/system.sh"; . "$SRC/core/store.sh"; . "$SRC/core/conf.sh"
+. "$SRC/core/utils.sh"; . "$SRC/core/system.sh"; . "$SRC/core/store.sh"; . "$SRC/core/errors.sh"; . "$SRC/core/hooks.sh"; . "$SRC/core/service.sh"; . "$SRC/core/conf.sh"
 check "value keeps an embedded #" \
     "$(ois_conf_decomment 'description = Rated #1 tool')" "description = Rated #1 tool"
 check "trailing comment is still stripped" \

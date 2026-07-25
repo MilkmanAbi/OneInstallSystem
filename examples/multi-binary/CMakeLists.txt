@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.10)
+project(toolkit C)
+add_executable(toolkit src/main.c)
+add_executable(toolkitd src/daemon.c)
+add_executable(toolkit-cli src/cli.c)
+set_target_properties(toolkit-cli PROPERTIES RUNTIME_OUTPUT_DIRECTORY tools)

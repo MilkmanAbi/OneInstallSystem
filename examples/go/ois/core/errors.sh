@@ -19,6 +19,9 @@
 #   E-LOCK      could not acquire the store lock
 #   E-PERM      insufficient privilege
 #   E-STATE     operation invalid in current state (not installed, etc.)
+#   E-HOOK      a lifecycle hook or service operation failed
+#   E-MIGRATE   a data migration failed (triggers automatic rollback)
+#   E-NIX       Nix-managed system; imperative install refused
 # ---------------------------------------------------------------------
 
 # ois_fail CODE "what" ["cause"] ["remedy"]...
@@ -90,10 +93,11 @@ ois_retry() {
 ois_run_logged() {
     _rl_log="$1" ; _rl_label="$2" ; shift 2
     ois_mkdir "${_rl_log%/*}" || return 1
-    if "$@" > "$_rl_log" 2>&1; then
-        return 0
-    fi
-    _rl_rc=$?
+    # Capture rc on the SAME line as the command. `if cmd; then` consumes
+    # cmd's status, and a later `_rl_rc=$?` reads the `if`'s result (0),
+    # not cmd's -- so a failing hook looked like a success.
+    "$@" > "$_rl_log" 2>&1 ; _rl_rc=$?
+    [ "$_rl_rc" = 0 ] && return 0
     printf '\n  %s--- last 15 lines of %s output ---%s\n' "$C_D" "$_rl_label" "$C_R" >&2
     tail -n 15 "$_rl_log" 2>/dev/null | while IFS= read -r _rl_l; do
         printf '  %s|%s %s\n' "$C_D" "$C_R" "$_rl_l" >&2

@@ -3,7 +3,7 @@
 # Pure POSIX sh. Hard dependency: sh + POSIX utilities.
 # ---------------------------------------------------------------------
 
-OIS_VERSION="2.0.0"
+OIS_VERSION="3.0.0"
 OIS_SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 1
 
 # shellcheck source=core/utils.sh
@@ -27,6 +27,10 @@ OIS_SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 1
 . "$OIS_SELF_DIR/core/json.sh"
 # shellcheck source=core/build.sh
 . "$OIS_SELF_DIR/core/build.sh"
+# shellcheck source=core/hooks.sh
+. "$OIS_SELF_DIR/core/hooks.sh"
+# shellcheck source=core/service.sh
+. "$OIS_SELF_DIR/core/service.sh"
 # shellcheck source=core/update.sh
 . "$OIS_SELF_DIR/core/update.sh"
 
@@ -39,6 +43,119 @@ _ois_cleanup() {
 trap '_ois_cleanup' EXIT
 trap '_ois_cleanup; exit 130' INT
 trap '_ois_cleanup; exit 143' TERM
+
+# -- Lockfile ----------------------------------------------------------
+# ois.lock records the dependency versions RESOLVED AT INSTALL TIME.
+# Deliberately scoped: OIS delegates to the system package manager, and
+# apt/pacman/apk cannot generally install an arbitrary older version, so
+# a lockfile here CANNOT promise reproduction the way Nix or Cargo can.
+# What it can do -- and what it is for -- is detect drift: commit it,
+# and `ois lock --check` tells you exactly which dependency moved
+# between two machines or two dates. Honest scope beats a false promise.
+ois_lock_write() {
+    _lw_app="$1"
+    [ -n "${OIS_CONF_SRC:-}" ] || return 0
+    _lw_root="${OIS_CONF_SRC%/*}" ; _lw_root="${_lw_root%/ois}"
+    _lw_f="$_lw_root/ois.lock"
+    [ -w "$_lw_root" ] 2>/dev/null || return 0
+    ois_deps_parse
+    {
+        printf '# ois.lock -- dependency versions resolved at install time.\n'
+        printf '# Commit this. It detects drift; it does not pin versions\n'
+        printf '# (system package managers cannot install arbitrary old ones).\n'
+        printf '# Regenerate: ois lock    Compare: ois lock --check\n'
+        printf 'ois_version\t%s\n' "$OIS_VERSION"
+        printf 'platform\t%s/%s\t%s\n' "$OIS_OS" "$OIS_ARCH" "$OIS_PM"
+        for _lw_n in $(ois_dep_names); do
+            _lw_v="$(ois_dep_version "$_lw_n")" || _lw_v="unknown"
+            printf 'dep\t%s\t%s\t%s\n' "$_lw_n" "$(ois_dep_package "$_lw_n")" "$_lw_v"
+        done
+    } | ois_write_atomic "$_lw_f" 644 || return 0
+    ois_dbg "wrote $_lw_f"
+    return 0
+}
+
+ois_lock_check() {
+    _lc_f="${1:-./ois.lock}"
+    [ -r "$_lc_f" ] || { ois_fail E-STATE "no lockfile at $_lc_f" "" \
+        "generate one: ois lock"; return 1; }
+    ois_deps_parse
+    _lc_drift=0
+    while IFS="$OIS_TAB" read -r _lc_k _lc_a _lc_b _lc_c || [ -n "$_lc_k" ]; do
+        case "$_lc_k" in
+            dep) ;;
+            platform)
+                [ "$_lc_a" = "$OIS_OS/$OIS_ARCH" ] || \
+                    ois_info "platform differs: locked $_lc_a, here $OIS_OS/$OIS_ARCH"
+                continue ;;
+            *) continue ;;
+        esac
+        _lc_now="$(ois_dep_version "$_lc_a")" || _lc_now="unknown"
+        if [ "$_lc_now" = "$_lc_c" ]; then
+            ois_dbg "same  $_lc_a $_lc_c"
+        else
+            ois_warn "drift: $_lc_a  locked=$_lc_c  installed=$_lc_now"
+            _lc_drift=$(( _lc_drift + 1 ))
+        fi
+    done < "$_lc_f"
+    if [ "$_lc_drift" = 0 ]; then
+        ois_ok "no dependency drift against $_lc_f"
+        return 0
+    fi
+    ois_warn "$_lc_drift dependency/dependencies differ from the lockfile"
+    return 1
+}
+
+# -- Nix detection -----------------------------------------------------
+# On NixOS the filesystem is managed declaratively: /usr/local/bin does
+# not exist and ~/.local/bin is outside the module system, so an OIS
+# install is at best invisible to the system and at worst misleading.
+# Detect it, explain it, and offer a flake fragment instead of failing
+# silently. Non-NixOS machines that merely have the nix package manager
+# get a warning, not a refusal -- ~/.local/bin works fine there.
+ois_nix_detect() {
+    [ -e /etc/NIXOS ] && { printf 'nixos'; return 0; }
+    [ -n "${NIX_STORE:-}" ] && { printf 'nix-shell'; return 0; }
+    command -v nix-env >/dev/null 2>&1 && { printf 'nix'; return 0; }
+    printf 'none'
+}
+
+# shellcheck disable=SC2016  # ${system} is Nix syntax, must stay literal
+_ois_nix_flake_fragment() {
+    printf '\n  A flake fragment for this project:\n\n'
+    printf '    # flake.nix\n'
+    printf '    {\n'
+    printf '      outputs = { self, nixpkgs }: let\n'
+    printf '        system = "%s-linux";\n' "$OIS_ARCH"
+    printf '        pkgs = nixpkgs.legacyPackages.${system};\n'
+    printf '      in {\n'
+    printf '        packages.${system}.default = pkgs.stdenv.mkDerivation {\n'
+    printf '          pname = "%s";\n' "${OIS_APP_NAME:-myapp}"
+    printf '          version = "%s";\n' "${1:-0.1.0}"
+    printf '          src = ./.;\n'
+    printf '          nativeBuildInputs = with pkgs; [ %s ];\n' \
+        "$(case "$OIS_BUILD_SYSTEM" in cmake) printf 'cmake' ;; meson) printf 'meson ninja' ;; cargo) printf 'cargo rustc' ;; go) printf 'go' ;; *) printf 'gnumake' ;; esac)"
+    printf '          buildInputs = with pkgs; [ %s ];\n' "${OIS_DEP_NAMES:-}"
+    printf '        };\n      };\n    }\n\n'
+}
+
+ois_nix_guard() {
+    _ng="$(ois_nix_detect)"
+    case "$_ng" in
+        nixos)
+            ois_fail E-NIX "this is NixOS -- OIS cannot manage software here" \
+                "NixOS builds its filesystem declaratively; imperative installs into /usr/local or ~/.local are not tracked by the system and will not survive a rebuild" \
+                "add this project to your configuration.nix or a flake instead" \
+                "to override anyway (it will work, but Nix will not know about it): OIS_ALLOW_NIX=1"
+            _ois_nix_flake_fragment "${1:-}"
+            return 1 ;;
+        nix-shell)
+            ois_warn "running inside a nix shell -- installs land outside the store and vanish with it" ;;
+        nix)
+            ois_dbg "nix package manager present; user-scope install is still fine" ;;
+    esac
+    return 0
+}
 
 # -- Scope -------------------------------------------------------------
 _resolve_scope() {
@@ -148,13 +265,26 @@ _install_from_tree() {
 
     ois_hdr "$OIS_APP_DISPLAY" "install  ois $OIS_VERSION  $OIS_OS/$OIS_ARCH  scope=$OIS_SCOPE"
 
+    _it_ver_hint="unknown"
+    if [ -r "$_it_root/VERSION" ]; then read -r _it_ver_hint < "$_it_root/VERSION" || :; fi
+
+    # NixOS refuses BEFORE any store mutation or prompt: the answer is
+    # "not here" regardless of whether the app is already recorded.
+    if [ "${OIS_ALLOW_NIX:-0}" != 1 ]; then
+        ois_nix_guard "$_it_ver_hint" || return 1
+    fi
+
     _it_bindir="$OIS_PREFIX/bin"
     _it_dest="$_it_bindir/$OIS_APP_BINARY"
 
     if ois_app_exists "$OIS_APP_NAME"; then
         case "$(ois_state_get "$OIS_APP_NAME")" in
             ok) ois_warn "$OIS_APP_NAME $(ois_meta_get "$OIS_APP_NAME" version) is already installed"
-                ois_ask "reinstall?" n || { ois_info "nothing to do"; return 0; } ;;
+                # Defaults to yes: running `install` again is an explicit
+                # request to reinstall, and doing so is non-destructive
+                # (user data is untouched), so --yes proceeds. Contrast
+                # the purge prompt, which defaults to no.
+                ois_ask "reinstall?" y || { ois_info "nothing to do"; return 0; } ;;
             *)  ois_warn "previous install of $OIS_APP_NAME did not complete -- redoing cleanly" ;;
         esac
     fi
@@ -175,6 +305,12 @@ _install_from_tree() {
     ois_write_atomic "$(ois_app_dir "$OIS_APP_NAME")/conf" 644 < "$OIS_CONF_SRC" || { _it_undo; return 1; }
 
     ois_deps_check || { _it_undo; return 1; }
+    ois_lock_write "$OIS_APP_NAME"
+
+    if ! ois_hook_run "$OIS_APP_NAME" pre-install "" "$_it_ver_hint" \
+                      "$_it_root/ois/hooks"; then
+        _it_undo; return 1
+    fi
 
     _it_log="$(ois_app_dir "$OIS_APP_NAME")/build.log"
     ois_info "building in $_it_root  (system: auto)"
@@ -188,6 +324,41 @@ _install_from_tree() {
 
     ois_install_file "$_it_built" "$_it_dest" 755 || { _it_undo; return 1; }
     ois_ok "installed $_it_dest"
+
+    # [binaries] -- extra executables from the same build/config.
+    # name = path-relative-to-build-root
+    if [ -n "$OIS_BINARIES_RAW" ]; then
+        _it_bins="$OIS_BINARIES_RAW"
+        while [ -n "$_it_bins" ]; do
+            case "$_it_bins" in
+                *"$OIS_NL"*) _it_bl="${_it_bins%%"$OIS_NL"*}" ; _it_bins="${_it_bins#*"$OIS_NL"}" ;;
+                *)           _it_bl="$_it_bins" ; _it_bins="" ;;
+            esac
+            [ -z "$_it_bl" ] && continue
+            _it_bn="${_it_bl%%	*}" ; _it_bp="${_it_bl#*	}"
+            ois_is_fname "$_it_bn" || { ois_warn "invalid binary name: $_it_bn"; continue; }
+            # The path is relative to the build tree and must stay inside
+            # it: reject absolute paths and any '..' traversal, so a
+            # hostile repo cannot point [binaries] at /etc or climb out.
+            case "$_it_bp" in
+                /*|*..*|'') ois_warn "invalid binary path (absolute or traversal): $_it_bp"; continue ;;
+            esac
+            _it_bsrc=""
+            for _it_c in "$_it_root/$_it_bp" "$_it_root/.ois-build/$_it_bp" \
+                         "$_it_root/build/$_it_bp" "$_it_root/target/release/$_it_bp"; do
+                [ -f "$_it_c" ] && [ -x "$_it_c" ] && { _it_bsrc="$_it_c"; break; }
+            done
+            if [ -z "$_it_bsrc" ]; then
+                ois_fail E-BUILD "extra binary '$_it_bn' not found at '$_it_bp'" \
+                    "[binaries] declares it but the build produced nothing executable there" \
+                    "paths are relative to the project root or the build dir"
+                _it_undo; return 1
+            fi
+            ois_install_file "$_it_bsrc" "$_it_bindir/$_it_bn" 755 || { _it_undo; return 1; }
+            ois_manifest_add "$OIS_APP_NAME" file "$_it_bindir/$_it_bn" purge
+            ois_ok "installed $_it_bindir/$_it_bn"
+        done
+    fi
 
     ois_runtime_install "$OIS_VERSION" "$OIS_SELF_DIR" || return 1
     ois_runtime_ref_add "$OIS_VERSION" "$OIS_APP_NAME"
@@ -215,6 +386,8 @@ prefix=$OIS_PREFIX
 runtime=$OIS_VERSION
 github=$OIS_APP_GITHUB
 update_mode=$OIS_APP_UPDATE_MODE
+channel=$OIS_APP_CHANNEL
+signing_key=$OIS_SIGNING_KEY
 config_dir=$OIS_OWNS_CONFIG
 data_dir=$OIS_OWNS_DATA
 cache_dir=$OIS_OWNS_CACHE
@@ -241,9 +414,19 @@ META
     ois_manifest_add "$OIS_APP_NAME" dir "$OIS_OWNS_CACHE"  purge
     ois_manifest_add "$OIS_APP_NAME" dir "$OIS_OWNS_STATE"  keep
 
+    ois_hooks_capture "$OIS_APP_NAME" "$_it_root" || \
+        ois_warn "could not capture hooks into the store"
     ois_env_write "$OIS_APP_NAME"
+
+    case "$OIS_SVC_ENABLE" in
+        true|yes|1)
+            ois_service_install "$OIS_APP_NAME" || { _it_undo; return 1; } ;;
+    esac
+
     ois_history_add "$OIS_APP_NAME" install "$_it_ver"
     ois_state_ok "$OIS_APP_NAME"
+
+    ois_hook_run "$OIS_APP_NAME" post-install "" "$_it_ver" || return 1
 
     printf '\n'
     ois_ok "$OIS_APP_DISPLAY $_it_ver installed"
@@ -379,6 +562,12 @@ cmd_uninstall() {
 
     ois_claims_fold "$_un_app"
 
+    if ! ois_hook_run "$_un_app" pre-uninstall "$(ois_meta_get "$_un_app" version)" ""; then
+        ois_err "pre-uninstall hook failed -- nothing was removed"
+        return 1
+    fi
+    ois_service_remove "$_un_app"
+
     if [ "$_un_purge" != 1 ]; then
         ois_ask "also delete config and saved data?" n && _un_purge=1
     fi
@@ -398,6 +587,9 @@ cmd_uninstall() {
     done < "$_un_mf"
 
     _un_rt="$(ois_meta_get "$_un_app" runtime || printf '%s' "$OIS_VERSION")"
+    # post-uninstall runs while the store record still exists, so the
+    # hook can still read its own metadata.
+    ois_hook_run "$_un_app" post-uninstall "$(ois_meta_get "$_un_app" version)" "" || :
     ois_runtime_ref_del "$_un_rt" "$_un_app"
     ois_app_destroy "$_un_app"
     ois_runtime_gc >/dev/null
@@ -464,6 +656,145 @@ cmd_deps() {
             "$_cd_n" "$_cd_rl" "$_cd_s" "$(ois_dep_package "$_cd_n")" "$OIS_DEP_HOW"
     done
     printf '\n'
+}
+
+# -- plan (dry run) ----------------------------------------------------
+# Read-only: report exactly what an install WOULD do, touching nothing.
+# The one command a cautious admin runs before letting OIS near a box.
+cmd_plan() {
+    _pl_arg="${1:-}"
+    if [ -n "$_pl_arg" ] && [ -d "$_pl_arg" ]; then
+        _load_conf_from_dir "$_pl_arg" || ois_fail_die E-CONF "no ois.conf under $_pl_arg"
+        _pl_root="$_pl_arg"
+    else
+        for _pl_c in "$OIS_SELF_DIR" "$OIS_SELF_DIR/.."; do
+            _load_conf_from_dir "$_pl_c" && break
+        done
+        if [ -z "${OIS_CONF_SRC:-}" ] && ! _ois_self_is_runtime; then
+            _load_conf_from_dir "." || :
+        fi
+        [ -n "${OIS_CONF_SRC:-}" ] || ois_fail_die E-CONF "no ois.conf found" \
+            "cd into the project, or: ois plan /path/to/project"
+        _pl_root="${OIS_CONF_SRC%/*}" ; _pl_root="${_pl_root%/ois}"
+    fi
+
+    ois_hdr "$OIS_APP_DISPLAY" "plan (dry run)  ois $OIS_VERSION  $OIS_OS/$OIS_ARCH  scope=$OIS_SCOPE"
+    _pl_bindir="$OIS_PREFIX/bin"
+
+    printf '  %sapp%s        %s  (binary: %s)\n' "$C_B" "$C_R" "$OIS_APP_NAME" "$OIS_APP_BINARY"
+    if ois_app_exists "$OIS_APP_NAME"; then
+        printf '  %saction%s     reinstall over %s %s\n' "$C_B" "$C_R" "$OIS_APP_NAME" \
+            "$(ois_meta_get "$OIS_APP_NAME" version 2>/dev/null || printf '?')"
+    else
+        printf '  %saction%s     fresh install\n' "$C_B" "$C_R"
+    fi
+
+    # build system
+    _pl_cwd="$(pwd)" ; cd "$_pl_root" 2>/dev/null || cd "$_pl_cwd" || :
+    _pl_bs="$OIS_BUILD_SYSTEM"
+    if [ "$_pl_bs" = auto ]; then
+        if   [ -f CMakeLists.txt ]; then _pl_bs="cmake (detected)"
+        elif [ -f Makefile ] || [ -f makefile ] || [ -f GNUmakefile ]; then _pl_bs="make (detected)"
+        elif [ -f meson.build ];  then _pl_bs="meson (detected)"
+        elif [ -f Cargo.toml ];   then _pl_bs="cargo (detected)"
+        elif [ -f go.mod ];       then _pl_bs="go (detected)"
+        elif [ -f build.zig ];    then _pl_bs="zig (detected)"
+        else _pl_bs="UNKNOWN -- no build system found"; fi
+    fi
+    cd "$_pl_cwd" || :
+    printf '  %sbuild%s      %s\n' "$C_B" "$C_R" "$_pl_bs"
+
+    # dependencies
+    ois_deps_parse
+    if [ -n "$OIS_DEP_TABLE" ]; then
+        printf '  %sdeps%s\n' "$C_B" "$C_R"
+        for _pl_n in $(ois_dep_names); do
+            if ois_dep_probe "$_pl_n"; then _pl_st="present"
+            else _pl_st="WILL INSTALL $(ois_dep_package "$_pl_n")"; fi
+            printf '               %-16s %s\n' "$_pl_n" "$_pl_st"
+        done
+    fi
+
+    # install destinations
+    printf '  %sinstalls%s   %s\n' "$C_B" "$C_R" "$_pl_bindir/$OIS_APP_BINARY"
+    if [ -n "$OIS_BINARIES_RAW" ]; then
+        _pl_b="$OIS_BINARIES_RAW"
+        while [ -n "$_pl_b" ]; do
+            case "$_pl_b" in *"$OIS_NL"*) _pl_bl="${_pl_b%%"$OIS_NL"*}" ; _pl_b="${_pl_b#*"$OIS_NL"}" ;;
+                             *) _pl_bl="$_pl_b" ; _pl_b="" ;; esac
+            [ -z "$_pl_bl" ] && continue
+            printf '               %s\n' "$_pl_bindir/${_pl_bl%%	*}"
+        done
+    fi
+
+    # service
+    case "$OIS_SVC_ENABLE" in
+        true|yes|1) printf '  %sservice%s    register with %s\n' "$C_B" "$C_R" "$(ois_service_backend)" ;;
+    esac
+
+    # hooks present in the tree
+    if [ -d "$_pl_root/ois/hooks" ] || [ -d "$_pl_root/ois/migrate" ]; then
+        printf '  %shooks%s      ' "$C_B" "$C_R"
+        for _pl_e in $OIS_HOOK_EVENTS; do
+            [ -f "$_pl_root/ois/hooks/$_pl_e.sh" ] && printf '%s ' "$_pl_e"
+        done
+        for _pl_m in "$_pl_root"/ois/migrate/*.sh; do
+            [ -f "$_pl_m" ] && { _pl_mv="${_pl_m##*/}"; printf 'migrate:%s ' "${_pl_mv%.sh}"; }
+        done
+        printf '\n'
+    fi
+
+    case ":$PATH:" in *":$_pl_bindir:"*) ;; *)
+        printf '  %sPATH%s       %s is NOT on your PATH\n' "$C_Y" "$C_R" "$_pl_bindir" ;; esac
+    printf '\n  %snothing was changed.%s  run:  ois install%s\n\n' "$C_D" "$C_R" \
+        "$([ -n "$_pl_arg" ] && [ -d "$_pl_arg" ] && printf ' %s' "$_pl_arg")"
+}
+
+# -- self-update -------------------------------------------------------
+# Update the OIS vendored in the CURRENT project from a git remote.
+# Refuses to run against the store runtime -- this edits a project's
+# ois/ directory, never the store.
+cmd_self_update() {
+    _su_src="${OIS_SELF_UPDATE_URL:-https://github.com/MilkmanAbi/OneInstallSystem}"
+    if _ois_self_is_runtime; then
+        ois_fail_die E-STATE "self-update updates a PROJECT's vendored ois/, not the store"             "run it from inside your project checkout, not via the global shim"             "cd into your project and run: sh ois/ois.sh self-update"
+    fi
+    _su_proj="$OIS_SELF_DIR" ; _su_proj="${_su_proj%/ois}"
+    [ -f "$_su_proj/ois/ois.sh" ] || ois_fail_die E-STATE "cannot locate this project's ois/ directory"
+    ois_hdr "self-update" "current ois $OIS_VERSION"
+    ois_need_tool git || exit 1
+
+    _su_tmp="$(ois_tmpdir)" || ois_fail_die E-STORE "no scratch space"
+    OIS_SCRATCH="$_su_tmp"
+    ois_info "fetching latest OIS from $_su_src"
+    if ! ois_run_logged "$_su_tmp/clone.log" "git clone"             git clone --depth 1 "$_su_src" "$_su_tmp/OIS"; then
+        ois_fail_die E-NET "could not clone $_su_src"             "check the URL and your connectivity"             "override the source: OIS_SELF_UPDATE_URL=<url> ois self-update"
+    fi
+    [ -f "$_su_tmp/OIS/ois/ois.sh" ] || ois_fail_die E-STATE "clone has no ois/ois.sh"
+    _su_new="$(sh "$_su_tmp/OIS/ois/ois.sh" --version 2>/dev/null | cut -d' ' -f2)"
+    ois_info "installed: $OIS_VERSION   available: ${_su_new:-unknown}"
+    if [ "$_su_new" = "$OIS_VERSION" ]; then
+        ois_ok "already on the latest OIS ($OIS_VERSION)"
+        return 0
+    fi
+    ois_ask "replace this project's ois/ with $_su_new?" y || { ois_info "cancelled"; return 0; }
+
+    # Replace core/ and ois.sh only. NEVER touch the user's ois.conf,
+    # hooks, or migrations -- those are the project's, not OIS's.
+    ois_install_file "$_su_tmp/OIS/ois/ois.sh" "$_su_proj/ois/ois.sh" 755 || return 1
+    ois_mkdir "$_su_proj/ois/core" || return 1
+    for _su_f in "$_su_tmp/OIS/ois/core"/*.sh; do
+        [ -f "$_su_f" ] || continue
+        ois_install_file "$_su_f" "$_su_proj/ois/core/${_su_f##*/}" 644 || return 1
+    done
+    # Remove core files that no longer exist upstream.
+    for _su_old in "$_su_proj/ois/core"/*.sh; do
+        [ -f "$_su_old" ] || continue
+        [ -f "$_su_tmp/OIS/ois/core/${_su_old##*/}" ] || { ois_rm "$_su_old"; ois_dbg "removed stale ${_su_old##*/}"; }
+    done
+    printf '\n' ; ois_ok "updated vendored OIS: $OIS_VERSION -> $_su_new"
+    ois_info "your ois.conf, hooks, and migrations were left untouched"
+    ois_info "commit the change: git add ois/ && git commit -m 'update OIS to $_su_new'"
 }
 
 cmd_rollback() {
@@ -610,6 +941,68 @@ cmd_doctor() {
     return "$_dr_bad"
 }
 
+cmd_service() {
+    _cs_app="$1" ; _cs_act="${2:-status}"
+    ois_app_exists "$_cs_app" || ois_fail_die E-STATE "$_cs_app is not installed"
+    ois_conf_load "$(ois_app_dir "$_cs_app")/conf" || exit 1
+    case "$_cs_act" in
+        start)   ois_service_start "$_cs_app" && ois_ok "started" ;;
+        stop)    ois_service_stop  "$_cs_app" && ois_ok "stopped" ;;
+        restart) ois_service_stop  "$_cs_app" ; ois_service_start "$_cs_app" && ois_ok "restarted" ;;
+        status)  ois_service_status "$_cs_app" ;;
+        enable)  ois_service_install "$_cs_app" ;;
+        disable) ois_service_remove  "$_cs_app" ;;
+        *) ois_fail_die E-STATE "unknown service action: $_cs_act" "" \
+               "valid: start stop restart status enable disable" ;;
+    esac
+}
+
+cmd_channel() {
+    _cc_app="$1" ; _cc_new="${2:-}"
+    ois_app_exists "$_cc_app" || ois_fail_die E-STATE "$_cc_app is not installed"
+    if [ -z "$_cc_new" ]; then
+        printf '%s\n' "$(ois_meta_get "$_cc_app" channel 2>/dev/null || printf 'stable')"
+        return 0
+    fi
+    case "$_cc_new" in
+        stable|beta|any|nightly) ;;
+        *) ois_fail_die E-STATE "unknown channel: $_cc_new" "" \
+               "valid: stable (releases only), beta (adds -rc/-beta/-alpha), any (every tag)" ;;
+    esac
+    ois_meta_setmany "$_cc_app" <<EOF
+channel=$_cc_new
+last_check=0
+backoff_n=0
+backoff_until=0
+EOF
+    ois_ok "$_cc_app is now on the $_cc_new channel"
+    ois_info "check now: ois check $_cc_app"
+}
+
+cmd_hooks() {
+    _ch_app="$1"
+    ois_app_exists "$_ch_app" || ois_fail_die E-STATE "$_ch_app is not installed"
+    ois_hdr "$_ch_app hooks" "ois $OIS_VERSION"
+    _ch_hd="$(ois_hooks_dir "$_ch_app")" ; _ch_any=0
+    for _ch_e in $OIS_HOOK_EVENTS; do
+        if [ -f "$_ch_hd/$_ch_e.sh" ]; then
+            printf '  %-16s %s\n' "$_ch_e" "captured" ; _ch_any=1
+        else
+            printf '  %-16s %s\n' "$_ch_e" "-"
+        fi
+    done
+    printf '\n  migrations\n'
+    _ch_md="$(ois_migrate_dir "$_ch_app")"
+    if [ -d "$_ch_md" ]; then
+        for _ch_m in "$_ch_md"/*.sh; do
+            [ -f "$_ch_m" ] || continue
+            _ch_v="${_ch_m##*/}" ; printf '    %s\n' "${_ch_v%.sh}" ; _ch_any=1
+        done
+    fi
+    [ "$_ch_any" = 0 ] && printf '    (none)\n'
+    printf '\n'
+}
+
 cmd_help() {
     printf '\nois %s -- OneInstallSystem\n\n' "$OIS_VERSION"
     printf '  ois install [PATH | USER/REPO] [--tag TAG] [--user|--system] [--prefix P] [--yes]\n'
@@ -633,7 +1026,7 @@ cmd_help() {
 # -- main --------------------------------------------------------------
 main() {
     _cmd="" _scope="" _app="" _purge=0 _arg1="" _arg2="" _to="" _tag="" _repair=0
-    OIS_JSON="${OIS_JSON:-0}"
+    OIS_JSON="${OIS_JSON:-0}" ; _check=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --app)      _app="$2" ; shift 2 ; continue ;;
@@ -644,6 +1037,7 @@ main() {
             --system)   _scope="system" ;;
             --purge)    _purge=1 ;;
             --repair)   _repair=1 ;;
+            --check)    _check=1 ;;
             --json)     OIS_JSON=1 ;;
             --yes|-y)   OIS_ASSUME_YES=1 ;;
             --verbose)  OIS_VERBOSE=1 ;;
@@ -690,6 +1084,21 @@ main() {
                 ois_json_info "$_arg1"
             else cmd_info "${_arg1:?app required}"; fi ;;
         deps)                cmd_deps ;;
+        service|svc)         cmd_service "${_arg1:?app required}" "${_arg2:-status}" ;;
+        channel)             cmd_channel "${_arg1:?app required}" "${_arg2:-}" ;;
+        hooks)               cmd_hooks   "${_arg1:?app required}" ;;
+        plan|dry-run)        cmd_plan "${_arg1:-}" ;;
+        self-update)         cmd_self_update ;;
+        lock)
+            for _lk_c in "$OIS_SELF_DIR" "$OIS_SELF_DIR/.."; do
+                _load_conf_from_dir "$_lk_c" && break
+            done
+            if [ -z "${OIS_CONF_SRC:-}" ] && ! _ois_self_is_runtime; then
+                _load_conf_from_dir "." || :
+            fi
+            [ -n "${OIS_CONF_SRC:-}" ] || ois_fail_die E-CONF "no ois.conf found"
+            if [ "$_check" = 1 ]; then ois_lock_check "${_arg1:-./ois.lock}"
+            else ois_lock_write "$OIS_APP_NAME" && ois_ok "wrote ois.lock"; fi ;;
         verify)              ois_verify_app "${_arg1:?app required}" && ois_ok "verified" ;;
         why|owner)           cmd_why "${_arg1:?path required}" ;;
         claim)               cmd_claim "${_arg1:?app required}" "${_arg2:?path required}" ;;

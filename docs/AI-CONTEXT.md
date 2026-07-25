@@ -57,6 +57,8 @@ ois/core/version.sh ois_ver_cmp, ois_ver_older
 ois/core/fetch.sh   ois_fetch, ois_latest_tag, TTL/backoff, ois_sums_verify
 ois/core/build.sh   ois_build_detect, ois_build_run
 ois/core/update.sh  ois_update_check, ois_update_run, ois_rollback_run
+ois/core/hooks.sh   ois_hooks_capture, ois_hook_run, ois_migrations_run
+ois/core/service.sh ois_service_install/stop/start/remove/status, backend detect
 ```
 
 Source order in `ois.sh` matters: utils → system → store → conf →
@@ -203,7 +205,8 @@ Cases v1 got wrong and tests now pin: `1.2 < 1.2.1`, `v1.9.0 < v2.0.0`,
 
 ## ERROR CODES
 
-`E-NET E-HTTP E-BUILD E-TOOL E-CONF E-STORE E-VERIFY E-LOCK E-PERM E-STATE`
+`E-NET E-HTTP E-BUILD E-TOOL E-CONF E-STORE E-VERIFY E-LOCK E-PERM E-STATE
+E-HOOK E-MIGRATE E-NIX`
 
 `ois_fail CODE "what" "cause" "remedy"...` prints, journals, returns 1.
 `ois_fail_die` exits. `ois_retry N DELAY cmd...` backs off but never
@@ -267,6 +270,24 @@ project that happens to have an ois.conf nearby.
 `cat $OIS_ROOT/apps/<app>/build.log`, then `tail $OIS_ROOT/log`.
 
 ---
+
+## V3 LIFECYCLE ORDER (do not reorder)
+
+install:   nix-guard -> deps-check -> lock-write -> pre-install ->
+           build -> install primary -> install [binaries] -> runtime/hook/shim ->
+           capture hooks/migrations -> service-install (if enable) ->
+           post-install
+update:    check(channel) -> acquire payload -> [refresh capture if source] ->
+           pre-update -> service-stop -> stash prev -> swap ->
+           migrations (old,new] -> [FAIL: rollback binary + service-start] ->
+           service-start -> post-update
+uninstall: claims-fold -> pre-uninstall -> service-remove -> remove files ->
+           post-uninstall -> destroy record -> gc
+
+Hooks/migrations are CAPTURED into apps/<name>/{hooks,migrate} at install
+because at uninstall (and prebuilt update) the source tree is gone.
+pre-* failures ABORT; post-* failures report but do not roll back;
+migration failure triggers automatic binary rollback.
 
 ## THINGS THAT LOOK LIKE BUGS BUT ARE NOT
 

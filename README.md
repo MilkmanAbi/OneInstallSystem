@@ -1,12 +1,6 @@
 # OIS — OneInstallSystem
 
-> OIS 2.0.0 breaks compatibility with 1.0.0. 1.0.0 does not have the required ABI or logic to cleanly migrate to 2.0.0 unfortunately - Internal Reference, AAS.
----
-> The AI-Reference docs exist to help people integrate OIS easier, if you're lazy just ask AI, I guess, made the doc to just make life a bit easier
----
-> Was a f*cking pain in the ass to get this working right, spent 6 over hours just testing and patching bugs.
-
-**v2.0.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD
+**v3.0.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD
 
 A drop-in installer, updater, and uninstaller for your app. Pure POSIX
 `sh`. You vendor two things into your repo and edit one file; your users
@@ -40,6 +34,7 @@ myapp --ois                  # what's installed, where, and what it owns
 ois list                     # every OIS-managed app on the machine
 ois doctor                   # diagnose anything that looks wrong
 ois rollback myapp           # undo an update, instantly, offline
+ois plan                     # dry run: what would install do? (changes nothing)
 ```
 
 ## What you get
@@ -57,6 +52,11 @@ ois rollback myapp           # undo an update, instantly, offline
   sha256-verified, atomic swap, instant rollback.
 - **Errors that tell you what to do.** Stable codes, the cause, the fix,
   and the last 15 lines of the build log.
+- **Production lifecycle.** Pre/post hooks, data migrations with
+  automatic rollback on failure, and init-system integration
+  (systemd/launchd/OpenRC) — so server daemons, not just CLI tools.
+- **Channels & signing.** stable/beta/any update tracks, and
+  minisign-verified releases for update integrity.
 
 ## Runs where you do
 
@@ -84,9 +84,11 @@ sh dash busybox-ash mksh ksh bash--posix    154 tests, 0 failures on each
 | [Platform quirks](docs/04-PLATFORMS.md) | BSD/macOS/Linux differences that break installers. |
 | [Commands](docs/05-COMMANDS.md) | CLI reference. |
 | [Errors](docs/06-ERRORS.md) | Every code and what to do about it. |
+| [Lifecycle](docs/07-LIFECYCLE.md) | Hooks, migrations, services, channels, signing, multi-binary. |
 | [AI-CONTEXT](docs/AI-CONTEXT.md) | Dense reference for LLM agents. |
 
-Working examples in [`examples/`](examples/): CMake, Make, Go, Rust.
+Working examples in [`examples/`](examples/): CMake, Make, Go, Rust, a
+**daemon** (hooks + service + migration), and a **multi-binary** suite.
 Each is a complete project you can `cd` into and install.
 
 ---
@@ -152,6 +154,7 @@ sh tests/run.sh          # store, claims, config, path safety      (34)
 sh tests/update.sh       # version compare, fetch, rollback         (34)
 sh tests/stress.sh       # concurrency, kill -9, hostile input      (43)
 sh tests/deps.sh         # alias table, probing, JSON               (43)
+sh tests/v3.sh           # hooks, migrations, services, channels    (67)
 ```
 
 Suites are hermetic: `OIS_ROOT`, `HOME`, and the XDG variables are

@@ -159,6 +159,12 @@ your app's runtime claims are accepted. A claim outside it is rejected and
 logged. Without that boundary a buggy app could claim `/` and uninstall
 would delete the machine.
 
+A claim *inside* the allowlist may set any policy, including `purge` on a
+file under a `keep`-policy directory. That is the app declaring its own
+file's lifecycle (it created the file; it may say the file is
+disposable), not an escalation -- the user's own files that the app never
+claimed remain covered by the directory-level `keep`.
+
 ---
 
 ## Full example

@@ -60,8 +60,13 @@ ois_priv() { "$@"; }
 ois_ask() {
     _ask_q="$1" ; _ask_def="${2:-n}"
     if [ "${OIS_ASSUME_YES:-0}" = "1" ]; then
+        # --yes accepts the DEFAULT, it does not blanket-answer "yes".
+        # A destructive prompt that defaults to "n" (e.g. "also delete
+        # config and saved data?") must stay "n" under --yes, or --yes
+        # becomes a data-loss footgun. Non-destructive prompts that need
+        # a yes already default to "y", so they proceed as intended.
         [ "$_ask_def" = "y" ] && return 0
-        return 0
+        return 1
     fi
     if [ ! -r /dev/tty ]; then
         ois_dbg "no tty; assuming default '$_ask_def' for: $_ask_q"
@@ -253,6 +258,18 @@ ois_trim() {
 ois_is_ident() {
     case "$1" in
         ''|*[!A-Za-z0-9_-]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# Filename guard: a valid executable name. Stricter than a path (no
+# slashes, so it cannot escape the bin dir) but looser than an ident
+# (allows '.' and '+' for names like "foo.sh" or "clang++"). Rejects
+# spaces, shell metacharacters, glob characters, and leading dashes
+# (which would look like an option to the tools that receive the name).
+ois_is_fname() {
+    case "$1" in
+        ''|-*|*[!A-Za-z0-9._+-]*) return 1 ;;
         *) return 0 ;;
     esac
 }

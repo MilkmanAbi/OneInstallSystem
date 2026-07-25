@@ -102,6 +102,29 @@ and no privilege helper exists.
 - Use `--user` to install under `$HOME` — no privileges needed.
 - On OpenBSD, configure `/etc/doas.conf`.
 
+## E-HOOK — a lifecycle hook or service operation failed
+
+A `pre-*` hook returned nonzero (which aborts), or a service failed to
+start. The last 15 lines of the hook/service output and the log path are
+shown. Fix the script in `ois/hooks/` and re-run. For services, the
+message includes the `journalctl`/`launchctl`/`rc-service` command to
+inspect it.
+
+## E-MIGRATE — a data migration failed
+
+A script in `ois/migrate/` returned nonzero. **OIS automatically rolled
+the binary back** to the previous version and restarted the service on
+it. Your data was left as the migration found it — inspect it (back it
+up in `pre-update` next time), fix the migration, and retry. If rollback
+*also* failed, the message says so and you should reinstall from source.
+
+## E-NIX — Nix-managed system
+
+This is NixOS, where imperative installs into `/usr/local` or `~/.local`
+aren't tracked by the system. Add the project to your Nix configuration
+instead — OIS prints a `flake.nix` fragment to start from. Override with
+`OIS_ALLOW_NIX=1` (it will work, but Nix won't know about it).
+
 ## E-STATE — invalid in the current state
 
 Cause: the app isn't installed, is already installed, or the operation

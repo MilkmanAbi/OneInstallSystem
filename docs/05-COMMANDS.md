@@ -100,6 +100,40 @@ claimed path the app has not created yet.
 
 ---
 
+## plan (dry run)
+
+```sh
+ois plan [path]
+```
+
+Reports exactly what an install would do -- build system, dependencies
+(and which are missing), install destinations, service registration,
+and hooks/migrations present -- and changes **nothing**. No store
+record, no files, no prompts. The command a cautious admin runs before
+letting OIS near a machine.
+
+## self-update
+
+```sh
+ois self-update
+```
+
+Updates the OIS vendored in the current project (`ois/ois.sh` and
+`ois/core/`) from git. Your `ois.conf`, hooks, and migrations are never
+touched. Refuses to run via the global shim -- it edits a project, not
+the store. Override the source with `OIS_SELF_UPDATE_URL=<url>`.
+
+## service / channel / hooks / lock
+
+```sh
+ois service <app> start|stop|restart|status|enable|disable
+ois channel <app> [stable|beta|any]    # read or switch update channel
+ois hooks <app>                        # which lifecycle hooks are captured
+ois lock [--check]                     # write, or verify, ois.lock
+```
+
+See [Lifecycle](07-LIFECYCLE.md) for the full model.
+
 ## doctor
 
 ```sh
