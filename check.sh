@@ -9,7 +9,7 @@ for sh_bin in sh dash "busybox sh" mksh ksh "bash --posix" "zsh --emulate sh"; d
     cmd="${sh_bin%% *}"
     command -v "$cmd" >/dev/null 2>&1 || { printf '== %-16s SKIP (not installed)\n' "$sh_bin"; continue; }
     printf '== %-16s ' "$sh_bin"
-    for suite in tests/run.sh tests/update.sh tests/deps.sh tests/v3.sh tests/stress.sh; do
+    for suite in tests/run.sh tests/update.sh tests/deps.sh tests/v3.sh tests/stress.sh tests/adversarial.sh; do
         if out="$(sh "$suite" "$sh_bin" 2>&1)"; then
             printf '%s: %s   ' "${suite##*/}" \
                 "$(printf '%s' "$out" | grep -o '=== [0-9].* ===' | tail -1)"

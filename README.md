@@ -69,7 +69,7 @@ optional and degrades cleanly.
 
 ```
 shellcheck -s sh    clean
-sh dash busybox-ash mksh ksh bash--posix    154 tests, 0 failures on each
+sh dash busybox-ash mksh ksh bash--posix    275 tests, 0 failures on each
 ```
 
 ---
@@ -85,7 +85,7 @@ sh dash busybox-ash mksh ksh bash--posix    154 tests, 0 failures on each
 | [Commands](docs/05-COMMANDS.md) | CLI reference. |
 | [Errors](docs/06-ERRORS.md) | Every code and what to do about it. |
 | [Lifecycle](docs/07-LIFECYCLE.md) | Hooks, migrations, services, channels, signing, multi-binary. |
-| [AI-CONTEXT](docs/AI-CONTEXT.md) | Reference for AI if you're lazy |
+| [AI-CONTEXT](docs/AI-CONTEXT.md) | Dense reference for LLM agents. |
 
 Working examples in [`examples/`](examples/): CMake, Make, Go, Rust, a
 **daemon** (hooks + service + migration), and a **multi-binary** suite.
@@ -103,7 +103,7 @@ ois/                the installer — copy this
   core/*.sh
 docs/               documentation
 examples/           four runnable projects
-tests/              154 tests across four suites
+tests/              275 tests across six suites
 check.sh            shellcheck + every suite on every shell present
 ```
 
@@ -153,8 +153,9 @@ sh check.sh              # shellcheck + all suites on every shell present
 sh tests/run.sh          # store, claims, config, path safety      (34)
 sh tests/update.sh       # version compare, fetch, rollback         (34)
 sh tests/stress.sh       # concurrency, kill -9, hostile input      (43)
+sh tests/adversarial.sh  # security audit: every attack vector        (39)
 sh tests/deps.sh         # alias table, probing, JSON               (43)
-sh tests/v3.sh           # hooks, migrations, services, channels    (67)
+sh tests/v3.sh           # hooks, migrations, services, channels    (82)
 ```
 
 Suites are hermetic: `OIS_ROOT`, `HOME`, and the XDG variables are

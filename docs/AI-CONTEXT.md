@@ -1,7 +1,7 @@
 # AI-CONTEXT
 
 Dense reference for an AI agent working on a project that uses OIS, or
-on OIS itself. Meant for people too lazy to read through OIS - which is fair.
+on OIS itself. Facts only, no prose. Humans: the other docs are nicer.
 
 ---
 
