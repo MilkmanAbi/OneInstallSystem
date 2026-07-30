@@ -22,8 +22,8 @@ check(){ if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected [$3] got [$2]
 rm -rf "$LAB"; mkdir -p "$LAB/home"
 printf '\n=== OIS v2 deps + json suite (%s) ===\n\n' "$SH"
 
-. "$SRC/core/utils.sh"; . "$SRC/core/system.sh"; . "$SRC/core/store.sh"
-. "$SRC/core/errors.sh"; . "$SRC/core/conf.sh"; . "$SRC/core/deps.sh"
+. "$SRC/core/utils.sh"; . "$SRC/core/version.sh"; . "$SRC/core/system.sh"; . "$SRC/core/store.sh"
+. "$SRC/core/errors.sh"; . "$SRC/core/conf.sh"; . "$SRC/core/pm.sh"; . "$SRC/core/deps.sh"
 . "$SRC/core/json.sh"
 export OIS_SCOPE=user
 OIS_VERSION="test"
@@ -37,7 +37,7 @@ ois_alias_pc git >/dev/null 2>&1 && bad "git claims a pkg-config name" \
 OIS_PM=apt    ; check "apt name for ncurses"    "$(ois_alias_pkg ncurses)" "libncurses-dev"
 OIS_PM=pacman ; check "pacman name for ncurses" "$(ois_alias_pkg ncurses)" "ncurses"
 OIS_PM=apk    ; check "apk name for ncurses"    "$(ois_alias_pkg ncurses)" "ncurses-dev"
-OIS_PM=brew   ; check "brew name for openssl"   "$(ois_alias_pkg openssl)" "openssl"
+OIS_PM=brew   ; check "brew name for openssl"   "$(ois_alias_pkg openssl)" "openssl@3"
 OIS_PM=emerge ; check "emerge name is categorised" "$(ois_alias_pkg openssl)" "dev-libs/openssl"
 OIS_PM=apt
 ois_alias_pkg definitelynotreal >/dev/null 2>&1 && bad "unknown name found in table" \
@@ -169,6 +169,50 @@ printf '%s' "$out" | grep -q "present" && ok "ois deps reports a present depende
                                        || bad "no 'present' row"
 printf '%s' "$out" | grep -q "MISSING" && ok "ois deps reports a missing dependency" \
                                        || bad "no 'MISSING' row"
+
+
+# ---------------------------------------------------------------------
+printf -- '-- v4: version comparison --\n'
+check "3.0 == 3.0"        "$(ois_ver_cmp 3.0 3.0)"      "0"
+check "3.1 > 3.0"         "$(ois_ver_cmp 3.1 3.0)"      "1"
+check "3.0 < 3.1"         "$(ois_ver_cmp 3.0 3.1)"      "-1"
+check "1.1.1 < 3.0"       "$(ois_ver_cmp 1.1.1 3.0)"    "-1"
+check "3 == 3.0.0"        "$(ois_ver_cmp 3 3.0.0)"      "0"
+check "8.21 > 8.9"        "$(ois_ver_cmp 8.21.0 8.9.0)" "1"
+# canonical ois_ver_cmp treats a trailing non-numeric as prerelease: 3p0 < 3
+check "3p0 < 3 (canonical: suffix = prerelease)" "$(ois_ver_cmp 3p0 3)" "-1"
+# and the @-suffix comparator used for next-best ranking:
+check "suffix 3 == 3.0"   "$(_ois_suffix_cmp 3 3.0)"   "0"
+check "suffix 3.5 > 3.0"  "$(_ois_suffix_cmp 3.5 3.0)" "1"
+
+printf -- '-- v4: macports alias column (14) --\n'
+OIS_PM=macports ; check "macports name for ncurses" "$(ois_alias_pkg ncurses)" "ncurses"
+OIS_PM=macports ; check "macports name for sdl2"    "$(ois_alias_pkg sdl2)"    "libsdl2"
+OIS_PM=macports ; check "macports name for x11"     "$(ois_alias_pkg x11)"     "xorg-libX11"
+
+printf -- '-- v4: privilege real-user detection --\n'
+OIS_IS_ROOT=no; unset SUDO_USER; OIS_REAL_USER=""
+check "non-root real user is current" "$(_ois_pm_real_user)" "$(id -un)"
+OIS_IS_ROOT=yes; SUDO_USER=testuser; OIS_REAL_USER=""
+check "root-via-sudo real user is SUDO_USER" "$(_ois_pm_real_user)" "testuser"
+OIS_REAL_USER=""; OIS_IS_ROOT=no; unset SUDO_USER
+
+printf -- '-- v4: install command generation (macports + more) --\n'
+OIS_PM=macports ; check "macports install cmd" "$(ois_pm_install_cmd foo bar)" "port install foo bar"
+OIS_PM=pkgin    ; check "pkgin install cmd"    "$(ois_pm_install_cmd foo)"     "pkgin -y install foo"
+OIS_PM=pkg      ; check "freebsd pkg install cmd" "$(ois_pm_install_cmd foo)"  "pkg install -y foo"
+
+printf -- '-- v4: next-best-version selection (mocked search) --\n'
+# Stub ois_pm_search to return versioned candidates; verify highest wins.
+ois_pm_search() { printf 'openssl@1.1\nopenssl@3\nopenssl\n'; }
+OIS_PM=brew
+_nb="$(ois_dep_next_best openssl 'openssl@3.5')"
+check "next-best picks highest @version" "$_nb" "openssl@3"
+# When only lower versions exist and exact is requested, still returns best.
+ois_pm_search() { printf 'foo\nfoo@1\nfoo@2\n'; }
+check "next-best picks foo@2" "$(ois_dep_next_best foo 'foo@9')" "foo@2"
+unset -f ois_pm_search
+
 
 printf '\n=== %s passed, %s failed ===\n\n' "$PASS" "$FAIL"
 rm -rf "$LAB"

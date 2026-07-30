@@ -1,6 +1,6 @@
 # Test Coverage
 
-275 tests across six suites. Every suite passes on sh, dash, busybox
+304 tests across seven suites. Every suite passes on sh, dash, busybox
 ash, mksh, ksh, and bash --posix. shellcheck (POSIX sh mode) is clean
 on all shipped code.
 
@@ -86,10 +86,10 @@ HTTP server (`python3 -m http.server`) standing in for GitHub via
 
 ---
 
-## tests/deps.sh — 43 tests
+## tests/deps.sh — 62 tests
 
 Dependency alias table, declaration parsing, probing, install commands,
-and JSON output.
+JSON output, and the v4 package-manager abstraction (`core/pm.sh`).
 
 | # | Test | Verified by |
 |---|---|---|
@@ -103,6 +103,30 @@ and JSON output.
 | 33-35 | JSON output parseable | `ois list --json` valid JSON with correct name/version; `ois info --json` includes manifest paths; output starts with `{` (no banner leakage) |
 | 36-37 | `ois deps` command | reports present and MISSING deps in human-readable table |
 | 38-43 | additional alias/probe/parse coverage | edge cases in field extraction, version query |
+| 44-51 | **v4** version comparison | canonical `ois_ver_cmp` (release > prerelease, differing segment counts) and `_ois_suffix_cmp` for `@`-version ranking |
+| 52-54 | **v4** MacPorts alias column (14) | `ois_alias_pkg` resolves `ncurses`, `sdl2`→`libsdl2`, `x11`→`xorg-libX11` under `OIS_PM=macports` |
+| 55-56 | **v4** privilege real-user detection | `_ois_pm_real_user` returns current user unprivileged, `$SUDO_USER` when root-via-sudo (brew de-escalation) |
+| 57-59 | **v4** install command generation | macports, pkgin, freebsd pkg syntax |
+| 60-62 | **v4** next-best-version | highest `@version` chosen from search candidates; fuzzy fallback selection |
+
+---
+
+## tests/path.sh — 16 tests
+
+Shell PATH management (`core/path.sh`): adding the install bindir to
+shell startup files on install and cleanly removing it on uninstall.
+This is what makes a user-scope install "just work" on macOS, where
+`~/.local/bin` is not on the default PATH in zsh or bash.
+
+| # | Test | Verified by |
+|---|---|---|
+| 1-3 | create `~/.profile` when no rc files exist | `ois_path_ensure` writes a managed block with the correct marker and bindir |
+| 4 | idempotency | a second `ois_path_ensure` does not duplicate the block |
+| 5-8 | existing rc files | `~/.zshrc` and `~/.bashrc` both get the block, existing content preserved, no spurious `~/.profile` |
+| 9-11 | retract | `ois_path_retract` removes the managed block but keeps the user's own lines |
+| 12-14 | refcounted retract | two managed dirs coexist; retracting one leaves the other's block intact |
+| 15 | system-prefix immunity | `/usr/local/bin` never triggers an rc-file edit |
+| 16 | fish support | `config.fish` gets `fish_add_path` only when a fish config already exists |
 
 ---
 

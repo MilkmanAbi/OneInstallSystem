@@ -447,3 +447,62 @@ ois deps             # how each declared dependency resolves here
 it is safe to run anywhere. On macOS, install `dash` and `mksh` from
 Homebrew to widen coverage; the system `bash 3.2` already provides a
 useful `--posix` target.
+
+---
+
+## 28. macOS: Homebrew keg-only — correct pkg-config path (v4)
+
+**The v3 approach** tried to glob `$(brew --prefix)/Cellar/*/*/lib/pkgconfig`. This breaks after a `brew upgrade` because the version directory changes, and silently fails when `pkg-config` itself isn't installed (the glob never fires).
+
+**v4 approach:** `brew --prefix <formula>` resolves to the stable `opt/` symlink (`/opt/homebrew/opt/openssl@3`), which Homebrew always creates for installed formulae regardless of linking status. OIS calls this for every declared dep and prepends both `/opt/homebrew/opt/<formula>/lib/pkgconfig` and `/opt/homebrew/lib/pkgconfig` to `PKG_CONFIG_PATH`.
+
+If `pkg-config` itself is absent, OIS installs it automatically via `brew install pkg-config` before any probing begins. As a final fallback, `brew list --versions <formula>` confirms the dep is present even with no .pc file.
+
+**In ois.conf** the alias table already maps `openssl` → `openssl@3` for brew, so you never need `openssl.brew = openssl@3`.
+
+---
+
+## 29. macOS: MacPorts pkg-config path (v4)
+
+MacPorts installs .pc files to `/opt/local/lib/pkgconfig` (or `$port_prefix/lib/pkgconfig`). v4 prepends this to `PKG_CONFIG_PATH` automatically whenever `OIS_PM=macports`, and prepends `/opt/local/include` and `/opt/local/lib` to `CPPFLAGS`/`LDFLAGS` in the build environment.
+
+---
+
+## 30. macOS: Auto-install of Xcode Command Line Tools (v4)
+
+When `xcode-select -p` exits 2 (CLT not installed), OIS offers to run `xcode-select --install` before attempting any build. The install is asynchronous (a GUI dialog appears); OIS exits after launching it and asks the user to re-run after completion.
+
+---
+
+## 31. macOS: Auto-install of Homebrew (v4)
+
+When `OIS_PM=brew` and `brew` is not on PATH, OIS offers to run the official Homebrew install script. After install it calls `brew shellenv` to wire the new prefix into the current shell session so the rest of the install proceeds without a restart.
+
+---
+
+## 32. macOS: Auto-install of MacPorts (v4)
+
+When `OIS_PM=macports` and `port` is absent, OIS:
+
+1. Detects the macOS version via `sw_vers -productVersion` and maps it to a codename (Tahoe, Sequoia, Sonoma, Ventura, …).
+2. Fetches the latest release URL from `https://api.github.com/repos/macports/macports-base/releases/latest` using pure POSIX shell parsing (no jq).
+3. Downloads the matching `MacPorts-X.Y.Z-NN-<Codename>.pkg` with `curl`.
+4. Runs `sudo installer -pkg <file> -target /` via `ois_priv`.
+5. Runs `sudo port selfupdate` to sync the ports tree.
+
+---
+
+## 33. next_best_version (v4)
+
+When a dep cannot be found after install, and `next_best_version = yes` is set in ois.conf, OIS searches the package manager for the closest available alternative:
+
+- **brew**: `brew search <base>` then picks the highest `@N` version.
+- **macports**: `port search --name <base>` picks the first match.
+- **apt**: `apt-cache search ^<name>` picks the first match.
+
+The user is shown the candidate and asked to confirm before it is installed. This is opt-in (default `no`) because "closest version" may not satisfy build requirements.
+
+**In ois.conf:**
+```ini
+next_best_version = yes
+```

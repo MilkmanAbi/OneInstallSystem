@@ -76,7 +76,7 @@ ois_conf_load() {
     OIS_BUILD_TARGET="" OIS_BUILD_CMAKE_OPTS="" OIS_BUILD_MAKE_OPTS=""
     OIS_OWNS_CONFIG="" OIS_OWNS_DATA="" OIS_OWNS_CACHE="" OIS_OWNS_STATE=""
     OIS_OWNS_EXTRA="" OIS_DEPS_RAW="" OIS_DEPS_OPT_RAW=""
-    OIS_APP_CHANNEL="stable" OIS_SIGNING_KEY=""
+    OIS_APP_CHANNEL="stable" OIS_SIGNING_KEY="" OIS_NEXT_BEST_VERSION="no"
     OIS_SVC_ENABLE="" OIS_SVC_ARGS="" OIS_SVC_DESC="" OIS_SVC_RESTART="on-failure"
     OIS_SVC_AFTER="network" OIS_BINARIES_RAW=""
 
@@ -128,7 +128,8 @@ ois_conf_load() {
             main:update_mode)  OIS_APP_UPDATE_MODE="$_cl_v" ;;
             main:description)  OIS_APP_DESC="$_cl_v" ;;
             main:require_sudo) OIS_APP_REQUIRE_SUDO="$_cl_v" ;;
-            main:channel)      OIS_APP_CHANNEL="$_cl_v" ;;
+            main:channel)           OIS_APP_CHANNEL="$_cl_v" ;;
+            main:next_best_version) OIS_NEXT_BEST_VERSION="$_cl_v" ;;
             main:signing_key)  OIS_SIGNING_KEY="$_cl_v" ;;
             svc:enable)        OIS_SVC_ENABLE="$_cl_v" ;;
             svc:args)          OIS_SVC_ARGS="$_cl_v" ;;
@@ -196,6 +197,7 @@ ois_conf_load() {
     export OIS_APP_PREFIX OIS_APP_UPDATE_MODE OIS_APP_DESC OIS_APP_REQUIRE_SUDO
     export OIS_BUILD_SYSTEM OIS_BUILD_OUT OIS_BUILD_CUSTOM OIS_BUILD_JOBS
     export OIS_BUILD_TARGET OIS_BUILD_CMAKE_OPTS OIS_BUILD_MAKE_OPTS OIS_DEP_NAMES
+    export OIS_NEXT_BEST_VERSION
     export OIS_OWNS_CONFIG OIS_OWNS_DATA OIS_OWNS_CACHE OIS_OWNS_STATE
     export OIS_OWNS_EXTRA OIS_DEPS_RAW OIS_DEPS_OPT_RAW
     export OIS_APP_CHANNEL OIS_SIGNING_KEY OIS_BINARIES_RAW

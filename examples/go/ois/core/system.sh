@@ -1,6 +1,6 @@
 #!/bin/sh
-# OIS v2 -- core/system.sh
-# Platform, package manager, and privilege detection.
+# OIS v4 -- core/system.sh
+# Platform, package manager, privilege, and macOS/BSD environment detection.
 # ---------------------------------------------------------------------
 
 case "$(uname -s 2>/dev/null)" in
@@ -18,7 +18,6 @@ esac
 OIS_DISTRO="" OIS_DISTRO_VER=""
 case "$OIS_OS" in linux|wsl)
     if [ -r /etc/os-release ]; then
-        # Subshell so os-release cannot clobber our variables.
         OIS_DISTRO="$(. /etc/os-release 2>/dev/null; printf '%s' "${ID:-}")"
         OIS_DISTRO_VER="$(. /etc/os-release 2>/dev/null; printf '%s' "${VERSION_ID:-}")"
     elif [ -f /etc/arch-release ];   then OIS_DISTRO="arch"
@@ -35,13 +34,77 @@ case "$(uname -m 2>/dev/null)" in
     *)             OIS_ARCH="$(uname -m 2>/dev/null || printf 'unknown')" ;;
 esac
 
+# -- macOS version detection -------------------------------------------
+# sw_vers -productVersion on every macOS from 10.x onward.
+# OIS_MACOS_VER: full dotted version e.g. "15.2.1" or "26.0"
+# OIS_MACOS_NAME: codename for MacPorts pkg selection
+OIS_MACOS_VER="" OIS_MACOS_NAME="" OIS_MACOS_MAJOR=""
+if [ "$OIS_OS" = "macos" ] && command -v sw_vers >/dev/null 2>&1; then
+    OIS_MACOS_VER="$(sw_vers -productVersion 2>/dev/null || printf '')"
+    OIS_MACOS_MAJOR="${OIS_MACOS_VER%%.*}"
+    # Sub-version for 10.x (e.g. 10.15 -> "15")
+    _ois_macos_minor="${OIS_MACOS_VER#*.}"
+    _ois_macos_minor="${_ois_macos_minor%%.*}"
+    case "$OIS_MACOS_MAJOR" in
+        26) OIS_MACOS_NAME="Tahoe"      ;;
+        15) OIS_MACOS_NAME="Sequoia"    ;;
+        14) OIS_MACOS_NAME="Sonoma"     ;;
+        13) OIS_MACOS_NAME="Ventura"    ;;
+        12) OIS_MACOS_NAME="Monterey"   ;;
+        11) OIS_MACOS_NAME="BigSur"     ;;
+        10) case "$_ois_macos_minor" in
+                15) OIS_MACOS_NAME="Catalina"   ;;
+                14) OIS_MACOS_NAME="Mojave"     ;;
+                13) OIS_MACOS_NAME="HighSierra" ;;
+                12) OIS_MACOS_NAME="Sierra"     ;;
+                11) OIS_MACOS_NAME="ElCapitan"  ;;
+                10) OIS_MACOS_NAME="Yosemite"   ;;
+                9)  OIS_MACOS_NAME="Mavericks"  ;;
+                *)  OIS_MACOS_NAME="Unknown"    ;;
+            esac ;;
+        *)  OIS_MACOS_NAME="Unknown" ;;
+    esac
+fi
+
+# -- Homebrew prefix ---------------------------------------------------
+# Intel: /usr/local  |  Apple Silicon: /opt/homebrew  |  Linux: /home/linuxbrew/.linuxbrew
+# Never hardcode either. Ask brew, with fallback probing.
+OIS_BREW_PREFIX=""
+if command -v brew >/dev/null 2>&1; then
+    OIS_BREW_PREFIX="$(brew --prefix 2>/dev/null || printf '')"
+fi
+# If brew not yet on PATH but exists at known locations, expose it
+if [ -z "$OIS_BREW_PREFIX" ]; then
+    for _bp in /opt/homebrew /usr/local /home/linuxbrew/.linuxbrew; do
+        if [ -x "$_bp/bin/brew" ]; then
+            OIS_BREW_PREFIX="$_bp"
+            eval "$("$_bp/bin/brew" shellenv 2>/dev/null)" 2>/dev/null || true
+            break
+        fi
+    done
+fi
+
+# -- MacPorts prefix ---------------------------------------------------
+OIS_PORT_PREFIX="/opt/local"
+command -v port >/dev/null 2>&1 && {
+    _pp="$(port prefix 2>/dev/null)" && [ -n "$_pp" ] && OIS_PORT_PREFIX="$_pp"
+}
+
 # -- Package manager ---------------------------------------------------
+# On macOS we respect the user-set OIS_PKG_MANAGER env (set by install.sh)
+# but still auto-detect to break ties.
 OIS_PM="unknown"
 case "$OIS_OS" in
     macos)
-        if   command -v brew >/dev/null 2>&1; then OIS_PM="brew"
-        elif command -v port >/dev/null 2>&1; then OIS_PM="macports"
-        fi ;;
+        # Respect explicit user choice from install.sh
+        case "${OIS_PKG_MANAGER:-}" in
+            brew|homebrew) OIS_PM="brew"     ;;
+            port|macports) OIS_PM="macports" ;;
+            *)
+                if   command -v brew >/dev/null 2>&1; then OIS_PM="brew"
+                elif command -v port >/dev/null 2>&1; then OIS_PM="macports"
+                fi ;;
+        esac ;;
     freebsd|dragonfly) command -v pkg     >/dev/null 2>&1 && OIS_PM="pkg"     ;;
     netbsd)            command -v pkgin   >/dev/null 2>&1 && OIS_PM="pkgin"   ;;
     openbsd)           command -v pkg_add >/dev/null 2>&1 && OIS_PM="pkg_add" ;;
@@ -60,10 +123,6 @@ case "$OIS_OS" in
 esac
 
 # -- Privilege ---------------------------------------------------------
-# v1 wrote  OIS_SUDO="${OIS_SUDO:-doas}"  when OIS_SUDO was already the
-# non-empty string "none", so :- never fired and doas was dead code.
-# Every privileged op in v1/utils.sh then hardcoded the literal `sudo`,
-# which meant system-scope install could not work on OpenBSD at all.
 OIS_IS_ROOT="no"
 [ "$(id -u 2>/dev/null)" = "0" ] && OIS_IS_ROOT="yes"
 
@@ -73,8 +132,6 @@ elif command -v sudo >/dev/null 2>&1; then OIS_SUDO="sudo"
 elif command -v doas >/dev/null 2>&1; then OIS_SUDO="doas"
 fi
 
-# Single definition point for privilege escalation. Nothing anywhere
-# else in OIS may name sudo or doas directly.
 if [ "$OIS_IS_ROOT" = "yes" ]; then
     ois_priv() { "$@"; }
 else
@@ -94,12 +151,14 @@ OIS_IS_CI="no"
 OIS_USER="${USER:-$(id -un 2>/dev/null)}"
 OIS_HOME="${HOME:-/root}"
 
-# XDG base directories. These are what [owns] declarations expand against.
 OIS_XDG_CONFIG="${XDG_CONFIG_HOME:-$OIS_HOME/.config}"
 OIS_XDG_DATA="${XDG_DATA_HOME:-$OIS_HOME/.local/share}"
 OIS_XDG_CACHE="${XDG_CACHE_HOME:-$OIS_HOME/.cache}"
 OIS_XDG_STATE="${XDG_STATE_HOME:-$OIS_HOME/.local/state}"
 
-export OIS_OS OIS_DISTRO OIS_DISTRO_VER OIS_ARCH OIS_PM
-export OIS_IS_ROOT OIS_SUDO OIS_MAKE OIS_IS_CI OIS_USER OIS_HOME
+export OIS_OS OIS_DISTRO OIS_DISTRO_VER OIS_ARCH
+export OIS_MACOS_VER OIS_MACOS_MAJOR OIS_MACOS_NAME
+export OIS_BREW_PREFIX OIS_PORT_PREFIX
+export OIS_PM OIS_IS_ROOT OIS_SUDO OIS_MAKE OIS_IS_CI
+export OIS_USER OIS_HOME
 export OIS_XDG_CONFIG OIS_XDG_DATA OIS_XDG_CACHE OIS_XDG_STATE

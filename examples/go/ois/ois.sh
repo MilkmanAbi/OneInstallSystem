@@ -3,7 +3,7 @@
 # Pure POSIX sh. Hard dependency: sh + POSIX utilities.
 # ---------------------------------------------------------------------
 
-OIS_VERSION="3.0.0"
+OIS_VERSION="4.0.0"
 OIS_SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 1
 
 # shellcheck source=core/utils.sh
@@ -18,9 +18,16 @@ OIS_SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || exit 1
 . "$OIS_SELF_DIR/core/version.sh"
 # shellcheck source=core/fetch.sh
 . "$OIS_SELF_DIR/core/fetch.sh"
+# pm.sh before deps.sh: deps probing/install calls the PM abstraction.
+# pm.sh after system.sh: it reads OIS_PM, OIS_IS_ROOT, OIS_SUDO, brew prefix.
+# shellcheck source=core/pm.sh
+. "$OIS_SELF_DIR/core/pm.sh"
 # deps.sh before errors.sh: ois_need_tool consults the alias table.
 # shellcheck source=core/deps.sh
 . "$OIS_SELF_DIR/core/deps.sh"
+# path.sh: shell PATH management (add on install, retract on uninstall).
+# shellcheck source=core/path.sh
+. "$OIS_SELF_DIR/core/path.sh"
 # shellcheck source=core/errors.sh
 . "$OIS_SELF_DIR/core/errors.sh"
 # shellcheck source=core/json.sh
@@ -436,9 +443,18 @@ META
     printf '    %-30s %s\n' "$OIS_APP_BINARY --uninstall" "remove"
     case ":$PATH:" in
         *":$_it_bindir:"*) ;;
-        *) printf '\n'; ois_warn "$_it_bindir is not on PATH"
-           # shellcheck disable=SC2016
-           printf '    export PATH="$PATH:%s"\n' "$_it_bindir" ;;
+        *)
+            # macOS especially: ~/.local/bin is not on PATH by default in
+            # zsh/bash, so a perfectly-installed binary "isn't found".
+            # Actively add it to the user's shell startup (user scope only;
+            # system prefixes are already global). Best-effort, never fatal.
+            if [ "$OIS_SCOPE" = "user" ]; then
+                ois_path_ensure "$_it_bindir"
+            else
+                printf '\n'; ois_warn "$_it_bindir is not on PATH"
+                # shellcheck disable=SC2016
+                printf '    export PATH=\"$PATH:%s\"\n' "$_it_bindir"
+            fi ;;
     esac
     printf '\n'
 }
@@ -587,10 +603,29 @@ cmd_uninstall() {
     done < "$_un_mf"
 
     _un_rt="$(ois_meta_get "$_un_app" runtime || printf '%s' "$OIS_VERSION")"
+    # Capture the bindir BEFORE the store record is destroyed, so we can
+    # decide whether to retract PATH once the app's files are gone.
+    _un_scope="$(ois_meta_get "$_un_app" scope || printf 'user')"
+    _un_prefix="$(ois_meta_get "$_un_app" prefix || printf '')"
     # post-uninstall runs while the store record still exists, so the
     # hook can still read its own metadata.
     ois_hook_run "$_un_app" post-uninstall "$(ois_meta_get "$_un_app" version)" "" || :
     ois_runtime_ref_del "$_un_rt" "$_un_app"
+
+    # Retract the PATH entry we added on install -- but only for user
+    # scope, and only if no OTHER installed app still keeps a binary in
+    # that bindir (refcounted, so uninstalling one of several tools that
+    # share ~/.local/bin does not break the others). Check while the
+    # store still has this app, excluding it explicitly.
+    if [ "$_un_scope" = "user" ] && [ -n "$_un_prefix" ]; then
+        _un_bindir="$_un_prefix/bin"
+        if ! ois_path_bindir_in_use "$_un_bindir" "$_un_app"; then
+            ois_path_retract "$_un_bindir"
+        else
+            ois_dbg "path: $_un_bindir still used by another app; keeping PATH entry"
+        fi
+    fi
+
     ois_app_destroy "$_un_app"
     ois_runtime_gc >/dev/null
     _ois_shim_gc

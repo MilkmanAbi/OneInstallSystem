@@ -24,6 +24,7 @@ A value like `x"; rm -rf /; :"` is an inert string.
 | `update_mode` | `notify` | `notify` \| `auto` \| `manual`. |
 | `prefix` | scope default | Override install prefix. `--prefix` beats it. |
 | `require_sudo` | `auto` | `auto` \| `yes` \| `no`. |
+| `next_best_version` | `no` | `yes` \| `no`. When `yes`, a missing dependency triggers a package-manager search for the closest available version, offered with confirmation before install. See [Platforms §33](04-PLATFORMS.md). |
 
 Default prefixes: user scope `~/.local`, system scope `/usr/local`.
 

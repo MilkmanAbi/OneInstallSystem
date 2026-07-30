@@ -1,24 +1,6 @@
 #!/bin/sh
-# OIS v2 -- core/build.sh
-# The build engine. Principles:
-#   - the project's build system is authoritative; OIS orchestrates,
-#     it never second-guesses. CMakeLists.txt is PROJECT-side; OIS just
-#     drives it well (Release config, parallel jobs, custom options,
-#     named targets, out-of-source dirs).
-#   - all build output is captured to a log; on failure the user sees
-#     the last 15 lines and the log path, not a bare "Build failed."
-#   - artifact discovery is by name + executability + freshness, so a
-#     build that silently produced nothing can never install a stale
-#     binary from a previous run.
-#
-# Config surface ([build] in ois.conf):
-#   system     = auto | make | cmake | meson | cargo | go | zig | custom
-#   out        = binary name produced (default: binary=)
-#   target     = named target to build (cmake/make/meson)
-#   cmake_opts = extra -D options, passed verbatim to configure
-#   make_opts  = extra arguments to make
-#   jobs       = auto | N
-#   custom     = shell command that must produce `out`
+# OIS v4 -- core/build.sh
+# The build engine.
 #
 # shellcheck disable=SC2153  # OIS_OS et al are assigned in system.sh
 # ---------------------------------------------------------------------
@@ -42,61 +24,76 @@ ois_build_detect() {
     return 0
 }
 
-# macOS + Homebrew: keg-only packages (ncurses, openssl...) do not link
-# into the default search path. v1 hardcoded ncurses paths for EVERY
-# app; v2 wires flags only for the deps this project actually declares.
+# Wire per-formula Homebrew flags (CPPFLAGS, LDFLAGS, PKG_CONFIG_PATH).
+# Delegates to ois_deps_enrich_env, which uses the stable brew opt/
+# symlinks and only wires deps that are actually installed. Idempotent,
+# so calling it here (in addition to deps_check) is safe and covers the
+# case where the build runs without a preceding deps_check.
 _ois_build_brew_env() {
     [ "$OIS_OS" = "macos" ] || return 0
-    command -v brew >/dev/null 2>&1 || return 0
-    for _bb_dep in $OIS_DEP_NAMES; do
-        _bb_p="$(brew --prefix "$_bb_dep" 2>/dev/null)" || continue
-        [ -d "$_bb_p" ] || continue
-        PKG_CONFIG_PATH="$_bb_p/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-        CPPFLAGS="-I$_bb_p/include${CPPFLAGS:+ $CPPFLAGS}"
-        LDFLAGS="-L$_bb_p/lib${LDFLAGS:+ $LDFLAGS}"
-        ois_dbg "brew dep wired: $_bb_dep -> $_bb_p"
-    done
-    export PKG_CONFIG_PATH CPPFLAGS LDFLAGS
+    command -v ois_deps_enrich_env >/dev/null 2>&1 && ois_deps_enrich_env
 }
 
 _ois_build_env() {
     case "$OIS_OS" in
         macos|freebsd|openbsd|netbsd|dragonfly)
             : "${CC:=clang}" ; : "${CXX:=clang++}" ;;
-        *)  : "${CC:=cc}"    ; : "${CXX:=c++}" ;;
+        *)  : "${CC:=cc}"   ; : "${CXX:=c++}" ;;
     esac
     export CC CXX
+
+    # BSD: /usr/local headers and libs not searched by default
     case "$OIS_OS" in freebsd|openbsd|netbsd|dragonfly)
         CPPFLAGS="-I/usr/local/include${CPPFLAGS:+ $CPPFLAGS}"
         LDFLAGS="-L/usr/local/lib${LDFLAGS:+ $LDFLAGS}"
         export CPPFLAGS LDFLAGS ;;
     esac
+
+    # MacPorts: /opt/local (or custom prefix) include/lib
+    if [ "$OIS_PM" = "macports" ]; then
+        _mpe="${OIS_PORT_PREFIX:-/opt/local}"
+        CPPFLAGS="-I$_mpe/include${CPPFLAGS:+ $CPPFLAGS}"
+        LDFLAGS="-L$_mpe/lib${LDFLAGS:+ $LDFLAGS}"
+        export CPPFLAGS LDFLAGS
+    fi
+
+    # Homebrew keg-only: wire per-dep flags
     _ois_build_brew_env
+
     OIS_JOBS="$OIS_BUILD_JOBS"
     [ "$OIS_JOBS" = "auto" ] && OIS_JOBS="$(ois_cpu_count)"
     case "$OIS_JOBS" in ''|*[!0-9]*) OIS_JOBS=1 ;; esac
 }
 
-# Find the freshly built executable named $OIS_BUILD_OUT anywhere under
-# the build tree. Freshness (newer than build start) is mandatory when
-# find(1) can judge it.
 _ois_build_locate() {
     _bl_stamp="$1"
-    # Fast path: the conventional spots.
+    if [ -n "$_bl_stamp" ]; then
+        for _bl_p in "$OIS_BUILD_OUT" "./$OIS_BUILD_OUT" \
+                     ".ois-build/$OIS_BUILD_OUT" "build/$OIS_BUILD_OUT" \
+                     "target/release/$OIS_BUILD_OUT" "zig-out/bin/$OIS_BUILD_OUT"; do
+            if [ ! -f "$_bl_p" ] || [ ! -x "$_bl_p" ]; then continue; fi
+            if ois_newer_than "$_bl_p" "$_bl_stamp"; then
+                OIS_BUILT="$_bl_p" ; return 0
+            fi
+        done
+        if command -v find >/dev/null 2>&1; then
+            _bl_found="$(find . -name "$OIS_BUILD_OUT" -type f \
+                -newer "$_bl_stamp" 2>/dev/null | head -n 1)"
+            if [ -n "$_bl_found" ] && [ -x "$_bl_found" ]; then
+                OIS_BUILT="$_bl_found" ; return 0
+            fi
+        fi
+        ois_dbg "no fresh artifact; accepting an existing one (build exited 0)"
+    fi
     for _bl_p in "$OIS_BUILD_OUT" "./$OIS_BUILD_OUT" \
                  ".ois-build/$OIS_BUILD_OUT" "build/$OIS_BUILD_OUT" \
                  "target/release/$OIS_BUILD_OUT" "zig-out/bin/$OIS_BUILD_OUT"; do
-        if [ ! -f "$_bl_p" ] || [ ! -x "$_bl_p" ]; then continue; fi
-        if [ -n "$_bl_stamp" ] && ! ois_newer_than "$_bl_p" "$_bl_stamp"; then
-            ois_dbg "stale candidate ignored: $_bl_p"; continue
+        if [ -f "$_bl_p" ] && [ -x "$_bl_p" ]; then
+            OIS_BUILT="$_bl_p" ; return 0
         fi
-        OIS_BUILT="$_bl_p" ; return 0
     done
-    # Slow path: search the whole tree (CMake nests targets in
-    # per-directory build dirs; this finds them wherever they land).
     if command -v find >/dev/null 2>&1; then
-        _bl_found="$(find . -name "$OIS_BUILD_OUT" -type f \
-            ${_bl_stamp:+-newer "$_bl_stamp"} 2>/dev/null | head -n 1)"
+        _bl_found="$(find . -name "$OIS_BUILD_OUT" -type f 2>/dev/null | head -n 1)"
         if [ -n "$_bl_found" ] && [ -x "$_bl_found" ]; then
             OIS_BUILT="$_bl_found" ; return 0
         fi
@@ -104,8 +101,6 @@ _ois_build_locate() {
     return 1
 }
 
-# ois_build_run [logfile]
-# Cwd must be the project root. Sets OIS_BUILT on success.
 ois_build_run() {
     _bd_log="${1:-${TMPDIR:-/tmp}/ois-build.$$.log}"
     _ois_build_env

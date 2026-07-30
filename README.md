@@ -1,6 +1,6 @@
 # OIS — OneInstallSystem
 
-**v3.0.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD
+**v4.0.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD
 
 A drop-in installer, updater, and uninstaller for your app. Pure POSIX
 `sh`. You vendor two things into your repo and edit one file; your users
@@ -58,6 +58,48 @@ ois plan                     # dry run: what would install do? (changes nothing)
 - **Channels & signing.** stable/beta/any update tracks, and
   minisign-verified releases for update integrity.
 
+## New in v4: macOS and BSD are first-class
+
+Linux was always easy. v4 makes macOS and the BSDs just as boring — the
+platforms where naive installers die are the ones OIS now handles end to
+end.
+
+- **A real package-manager abstraction.** `core/pm.sh` gives every
+  manager the same five verbs — *is it installed*, *is it known*,
+  *search*, *install*, *installed version* — so Homebrew, MacPorts, apt,
+  pacman, dnf, zypper, apk, xbps, emerge, pkg, pkgin, pkg_add and IPS all
+  answer the same questions the same way. Package **state** is read from
+  the manager itself (`brew list --versions`, `port -q installed`,
+  `pkg info -e`, `pkg_info -e`), not guessed from linking status.
+- **Homebrew keg-only, solved three ways.** `ncurses`, `curl`,
+  `openssl@3` and friends install but don't link into the prefix. OIS
+  finds them via the stable `brew --prefix <formula>` opt symlink,
+  enriches `PKG_CONFIG_PATH`, and wires `-I`/`-L` build flags — and if
+  `pkg-config` isn't even present, header search and `brew list` still
+  resolve them. This is the exact failure that used to loop forever.
+- **Homebrew never runs as root.** brew hard-refuses root. If OIS is
+  launched under `sudo` for a `--system` install, every brew call is
+  de-escalated to the invoking user (`sudo -u $SUDO_USER -H brew …`)
+  instead of dying with *"unknown user: brew"*.
+- **Bootstrap what's missing.** Offers to install the Xcode Command Line
+  Tools (`xcode-select --install`), Homebrew (official script, run as the
+  real user), or the correct MacPorts `.pkg` — version-matched to your
+  macOS (Tahoe, Sequoia, Sonoma, …) straight from the GitHub releases
+  API, then `port selfupdate`.
+- **PATH that just works.** A user-scope install lands in `~/.local/bin`,
+  which macOS zsh/bash do not search by default. OIS adds it to your
+  shell startup files inside a clearly-marked managed block (zsh, bash,
+  POSIX `.profile`, and fish if configured), and **removes it on
+  uninstall** — refcounted, so uninstalling one of several tools that
+  share the directory leaves the rest working.
+- **Leniency: next-best version.** Set `next_best_version = yes` and if
+  an exact dependency is missing, OIS searches the manager for the
+  closest available match (highest `@version` on brew, nearest port,
+  etc.) and offers it — opt-in, always with confirmation.
+- **BSD ownership, sudo vs doas.** OpenBSD ships `doas` and no `sudo`;
+  all elevation goes through one `ois_priv` that prefers `doas` when
+  `/etc/doas.conf` exists. Queries never elevate; only installs do.
+
 ## Runs where you do
 
 Linux (glibc and musl), macOS (Intel and Apple Silicon), FreeBSD,
@@ -69,7 +111,7 @@ optional and degrades cleanly.
 
 ```
 shellcheck -s sh    clean
-sh dash busybox-ash mksh ksh bash--posix    275 tests, 0 failures on each
+sh dash busybox-ash mksh ksh bash--posix    304 tests, 0 failures on each
 ```
 
 ---
@@ -103,7 +145,7 @@ ois/                the installer — copy this
   core/*.sh
 docs/               documentation
 examples/           four runnable projects
-tests/              275 tests across six suites
+tests/              304 tests across seven suites
 check.sh            shellcheck + every suite on every shell present
 ```
 
@@ -142,7 +184,7 @@ rejected and logged.
 ## Continuous integration
 
 `.github/workflows/check.yml` runs the gate on every push: shellcheck
-plus all four suites on six shells under Linux, and again on macOS for
+plus all seven suites on six shells under Linux, and again on macOS for
 real BSD userland. Embedding OIS in your app is the primary workflow;
 this is just how *OIS itself* stays portable.
 
@@ -154,7 +196,8 @@ sh tests/run.sh          # store, claims, config, path safety      (34)
 sh tests/update.sh       # version compare, fetch, rollback         (34)
 sh tests/stress.sh       # concurrency, kill -9, hostile input      (43)
 sh tests/adversarial.sh  # security audit: every attack vector        (39)
-sh tests/deps.sh         # alias table, probing, JSON               (43)
+sh tests/deps.sh         # alias table, probing, pm abstraction     (62)
+sh tests/path.sh         # shell PATH add/retract (macOS-critical)   (16)
 sh tests/v3.sh           # hooks, migrations, services, channels    (82)
 ```
 
