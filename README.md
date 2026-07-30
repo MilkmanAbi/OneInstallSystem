@@ -13,6 +13,8 @@ $EDITOR yourproject/ois/ois.conf        # set app_name
 cd yourproject && sh install.sh --user  # done
 ```
 
+> **All you gotta copy is ois and the install.sh, that's it, into your project root.**
+
 The minimum viable config is one line:
 
 ```ini
