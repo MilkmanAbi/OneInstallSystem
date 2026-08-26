@@ -11,16 +11,16 @@ code](#portability-rules-for-your-own-code) at the bottom.
 
 ## Quick platform matrix
 
-| | Linux (glibc) | Alpine (musl) | macOS | FreeBSD | OpenBSD | NetBSD |
-|---|---|---|---|---|---|---|
-| `/bin/sh` is | dash/bash | busybox ash | bash 3.2 (POSIX mode) | sh (ash) | ksh | sh (ash) |
-| privilege | `sudo` | `sudo` | `sudo` | `sudo` | **`doas`** | `sudo` |
-| package manager | apt/dnf/pacman/… | `apk` | `brew`/`port` | `pkg` | `pkg_add` | `pkgin` |
-| sha256 tool | `sha256sum` | `sha256sum` | `shasum -a 256` | `sha256` | `sha256` | `cksum -a sha256` |
-| cpu count | `nproc` | `nproc` | `sysctl -n hw.ncpu` | `sysctl -n hw.ncpu` | `sysctl -n hw.ncpu` | `sysctl -n hw.ncpu` |
-| default prefix | `/usr/local` | `/usr/local` | `/usr/local` or `/opt/homebrew` | `/usr/local` | `/usr/local` | `/usr/pkg` |
-| `/proc` exists | yes | yes | **no** | optional | **no** | optional |
-| `-devel` packages | yes | yes (`-dev`) | no (headers bundled) | no | **no** | no |
+| | Linux (glibc) | Alpine (musl) | macOS | FreeBSD | OpenBSD | NetBSD | Termux (Android) |
+|---|---|---|---|---|---|---|---|
+| `/bin/sh` is | dash/bash | busybox ash | bash 3.2 (POSIX mode) | sh (ash) | ksh | sh (ash) | bash |
+| privilege | `sudo` | `sudo` | `sudo` | `sudo` | **`doas`** | `sudo` | **none, ever** |
+| package manager | apt/dnf/pacman/… | `apk` | `brew`/`port` | `pkg` | `pkg_add` | `pkgin` | `apt`/`pkg` (same db) |
+| sha256 tool | `sha256sum` | `sha256sum` | `shasum -a 256` | `sha256` | `sha256` | `cksum -a sha256` | `sha256sum` |
+| cpu count | `nproc` | `nproc` | `sysctl -n hw.ncpu` | `sysctl -n hw.ncpu` | `sysctl -n hw.ncpu` | `sysctl -n hw.ncpu` | `nproc` |
+| default prefix | `/usr/local` | `/usr/local` | `/usr/local` or `/opt/homebrew` | `/usr/local` | `/usr/local` | `/usr/pkg` | `$PREFIX` (own sandbox) |
+| `/proc` exists | yes | yes | **no** | optional | **no** | optional | yes |
+| `-devel` packages | yes | yes (`-dev`) | no (headers bundled) | no | **no** | no | **no (headers bundled)** |
 
 OIS detects all of this at runtime. `ois doctor` prints what it found.
 
@@ -506,3 +506,51 @@ The user is shown the candidate and asked to confirm before it is installed. Thi
 ```ini
 next_best_version = yes
 ```
+
+---
+
+## 34. Termux (Android): apt with no root, ever (v4)
+
+**Bites you:** Termux runs a real `apt`/`dpkg` stack — `pkg` is just its own
+frontend over the identical database, so `pkg install foo` and
+`apt-get install -y foo` do the same thing. `uname -s` reports `Linux`
+there too, so nothing tells you apart from a normal Debian box except one
+thing: **Termux has no root and never will.** `sudo`/`doas` aren't
+installed and wouldn't do anything useful if they were — every package
+installs unprivileged into Termux's own sandboxed `$PREFIX`
+(`/data/data/com.termux/files/usr`), by design, always. An installer that
+assumes "no sudo == can't install" (a safe assumption on every other apt
+system OIS targets) fails Termux specifically, and only Termux.
+
+Termux's package *names* also don't follow Debian's `-dev` split
+convention — headers ship in the same package as the library:
+`ncurses` not `libncurses-dev`, `libcurl` not `libcurl4-openssl-dev`,
+`openssl` not `libssl-dev`.
+
+**OIS:**
+- Detects Termux via `$TERMUX_VERSION`, exported into every Termux session
+  by the base system — reliable where `uname -s` isn't. Sets
+  `OIS_OS=termux` and `OIS_IS_TERMUX=yes`; `OIS_PM` stays `apt` (it
+  genuinely is), so every apt query function (`ois_pm_have`, `ois_pm_known`,
+  `ois_pm_search`) works unchanged.
+- `ois_pm_do_install` and `ois_pm_refresh_index` (`core/pm.sh`) skip the
+  root/sudo requirement entirely on Termux and run `apt-get` directly —
+  installing there was never gated on privilege that doesn't apply.
+- The same bypass covers the earlier pre-flight check in
+  `_ois_deps_confirm_and_install` (`core/deps.sh`), which previously failed
+  with `E-PERM` before even offering to install anything.
+- The alias table (`_ois_alias_row`) gained a 15th column for Termux
+  package names, populated for the entries verified against real Termux
+  package listings (`ncurses`, `openssl`, `curl`→`libcurl`, `mpv`). Rows
+  without a Termux entry fall back to the bare dependency name, which is
+  often — but not verifiably — correct there too.
+- `ois_dep_package` also honours an explicit `foo.termux = bar` key in
+  `ois.conf`, distinct from `foo.apt = bar`, for anything your app needs
+  that the shared alias table doesn't cover.
+
+**You:** if your app declares a dependency not in the alias table (see
+`core/deps.sh`), add a `<dep>.termux = <package>` line to your `ois.conf`
+rather than assuming the apt-column name is right — it usually isn't.
+`--system` scope still correctly refuses on Termux (no root exists to
+elevate to) and tells the user to use `--user`, which needs no code path
+of its own: Termux's non-root `id -u` already makes `--user` the default.

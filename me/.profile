@@ -38,3 +38,27 @@ case ":$PATH:" in
 esac
 export PATH
 # <<< ois path (managed) <<<
+# >>> ois path (managed) >>>
+# Added by OIS so installed tools in this directory are found.
+case ":$PATH:" in
+  *":/tmp/ois-stress.10781/ho me/.local/bin:"*) ;;
+  *) PATH="/tmp/ois-stress.10781/ho me/.local/bin:$PATH" ;;
+esac
+export PATH
+# <<< ois path (managed) <<<
+# >>> ois path (managed) >>>
+# Added by OIS so installed tools in this directory are found.
+case ":$PATH:" in
+  *":/tmp/ois-stress.22111/ho me/.local/bin:"*) ;;
+  *) PATH="/tmp/ois-stress.22111/ho me/.local/bin:$PATH" ;;
+esac
+export PATH
+# <<< ois path (managed) <<<
+# >>> ois path (managed) >>>
+# Added by OIS so installed tools in this directory are found.
+case ":$PATH:" in
+  *":/tmp/ois-stress.4814/ho me/.local/bin:"*) ;;
+  *) PATH="/tmp/ois-stress.4814/ho me/.local/bin:$PATH" ;;
+esac
+export PATH
+# <<< ois path (managed) <<<

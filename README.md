@@ -1,6 +1,6 @@
 # OIS — OneInstallSystem
 
-**v4.0.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD
+**v4.0.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD · Termux/Android
 
 A drop-in installer, updater, and uninstaller for your app. Pure POSIX
 `sh`. You vendor two things into your repo and edit one file; your users
@@ -105,7 +105,9 @@ end.
 ## Runs where you do
 
 Linux (glibc and musl), macOS (Intel and Apple Silicon), FreeBSD,
-OpenBSD, NetBSD, DragonFly, WSL.
+OpenBSD, NetBSD, DragonFly, WSL, Termux (Android) — apt with no root,
+ever, and package names that don't follow Debian's `-dev` split; see
+[Platform quirks](docs/04-PLATFORMS.md#34-termux-android-apt-with-no-root-ever-v4).
 
 Hard dependency: `sh` and POSIX utilities. `curl` or `wget` for updates.
 Everything else — `mktemp`, `find`, `sha256sum`, `pkg-config` — is
