@@ -1,5 +1,5 @@
 #!/bin/sh
-# OIS v2 -- OneInstallSystem
+# OIS v4 -- OneInstallSystem
 # Pure POSIX sh. Hard dependency: sh + POSIX utilities.
 # ---------------------------------------------------------------------
 
