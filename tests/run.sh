@@ -151,8 +151,8 @@ got="$(grep -c 'claim-rejected' "$OIS_ROOT/apps/alpha/history" || true)"
 printf -- '\n-- v1 bug 1.6: cp over a running binary (ETXTBSY) --\n'
 if command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1; then
     CC="$(command -v cc || command -v gcc)"
-    printf 'int main(void){ sleep(30); return 0; }\n' > "$LAB/spin.c"
-    "$CC" -w -o "$LAB/running" "$LAB/spin.c" 2>/dev/null
+    printf '#include <unistd.h>\nint main(void){ sleep(30); return 0; }\n' > "$LAB/spin.c"
+    "$CC" -Wall -Werror -o "$LAB/running" "$LAB/spin.c" || exit 1
     cp "$LAB/running" "$LAB/replacement"
     "$LAB/running" & RUNPID=$!
     sleep 0.5
@@ -184,14 +184,14 @@ printf -- '\n-- v1 bug 1.7: --yes must skip every prompt --\n'
 mkproj gamma
 if ( $SH "$LAB/src/gamma/ois/ois.sh" install --user --yes >/dev/null 2>&1 & \
      p=$!; i=0; while kill -0 $p 2>/dev/null && [ $i -lt 30 ]; do sleep 1; i=$((i+1)); done
-     kill -0 $p 2>/dev/null && { kill -9 $p; exit 1; }; exit 0 ) < /dev/null; then
+     kill -0 $p 2>/dev/null && { kill -9 $p; exit 1; }; wait "$p" ) < /dev/null; then
     ok "install --yes completes without stdin (no hang)"
 else
     bad "install --yes hung waiting on a prompt"
 fi
 if ( $SH "$HOME/.local/bin/.gamma-ois" uninstall --yes --purge >/dev/null 2>&1 & \
      p=$!; i=0; while kill -0 $p 2>/dev/null && [ $i -lt 30 ]; do sleep 1; i=$((i+1)); done
-     kill -0 $p 2>/dev/null && { kill -9 $p; exit 1; }; exit 0 ) < /dev/null; then
+     kill -0 $p 2>/dev/null && { kill -9 $p; exit 1; }; wait "$p" ) < /dev/null; then
     ok "uninstall --yes completes without stdin (v1 hung here)"
 else
     bad "uninstall --yes hung waiting on a prompt"

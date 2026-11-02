@@ -268,7 +268,10 @@ grep -q "^dep	sh" "$LAB/src/lockapp/ois.lock" 2>/dev/null \
     && ok "lockfile records resolved dependencies" || bad "no dep lines"
 ( cd "$LAB/src/lockapp" && $SH ois/ois.sh lock --check >/dev/null 2>&1 ) \
     && ok "lock --check passes against itself" || bad "lock --check failed on a fresh lock"
-sed -i 's/^dep	sh	\(.*\)	.*/dep	sh	\1	9.9.9-fake/' "$LAB/src/lockapp/ois.lock" 2>/dev/null
+awk 'BEGIN { FS=OFS="\t" } $1 == "dep" && $2 == "sh" { $4="9.9.9-fake" } { print }' \
+    "$LAB/src/lockapp/ois.lock" > "$LAB/drift.lock" || exit 1
+mv "$LAB/drift.lock" "$LAB/src/lockapp/ois.lock"
+grep -q '9.9.9-fake' "$LAB/src/lockapp/ois.lock" || exit 1
 out="$( cd "$LAB/src/lockapp" && $SH ois/ois.sh lock --check 2>&1 )" \
     && bad "lock --check missed injected drift" \
     || { printf '%s' "$out" | grep -q "drift" && ok "lock --check detects drift" \

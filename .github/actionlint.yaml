@@ -1,0 +1,5 @@
+# This image is published by actions/runner-images; actionlint 1.7.12's
+# built-in label list predates its availability.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

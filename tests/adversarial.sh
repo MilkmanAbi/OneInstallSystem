@@ -35,6 +35,7 @@ mkproj() {
 . "$SRC/core/errors.sh"; . "$SRC/core/conf.sh"; . "$SRC/core/hooks.sh"
 . "$SRC/core/service.sh"
 export OIS_SCOPE=user
+PLAT="$OIS_OS-$OIS_ARCH"
 OISVER="$(sh "$SRC/ois.sh" --version 2>/dev/null | cut -d' ' -f2)"
 
 rm -rf "$LAB"; mkdir -p "$HOMEDIR" "$LAB/src"
@@ -109,8 +110,9 @@ check "crash during build leaves state=installing" \
 #    OIS should wait (not steal), then time out gracefully.
 ois_lock_release 2>/dev/null
 mkdir -p "$OIS_ROOT/lock" 2>/dev/null
-# Use PID 1 (init/systemd, always alive, never an OIS process)
-printf '1\n' > "$OIS_ROOT/lock/pid"
+# The harness is alive, owned by this user, and is not the child installer.
+# PID 1 is unsuitable: kill -0 can return EPERM for a non-root runner.
+printf '%s\n' "$$" > "$OIS_ROOT/lock/pid"
 mkproj lockpid
 # 5-second timeout should be enough to verify it doesn't steal
 timeout 8 $SH "$LAB/src/lockpid/ois/ois.sh" install --user --yes > "$LAB/lk.txt" 2>&1
@@ -214,14 +216,17 @@ ok "second uninstall of the shared file does not error"
 mkproj symesc
 $SH "$LAB/src/symesc/ois/ois.sh" install --user --yes >/dev/null 2>&1
 mkdir -p "$XDG_CONFIG_HOME/symesc"
-ln -s /etc "$XDG_CONFIG_HOME/symesc/escape"
-printf 'file\t%s/symesc/escape/shadow\tpurge\n' "$XDG_CONFIG_HOME" >> "$OIS_ROOT/apps/symesc/claims"
+mkdir -p "$LAB/outside"
+printf 'irreplaceable\n' > "$LAB/outside/precious"
+ln -s "$LAB/outside" "$XDG_CONFIG_HOME/symesc/escape"
+printf 'file\t%s/symesc/escape/precious\tpurge\n' "$XDG_CONFIG_HOME" >> "$OIS_ROOT/apps/symesc/claims"
 $SH "$HOMEDIR/.local/bin/.symesc-ois" info >/dev/null 2>&1
 # The claim should fold (the lexical path IS under [owns]). But uninstall
 # must not follow the symlink to delete /etc/shadow.
 $SH "$HOMEDIR/.local/bin/.symesc-ois" uninstall --yes --purge >/dev/null 2>&1
-[ -f /etc/shadow ] && ok "symlink-containing claim path: /etc/shadow survives uninstall" \
-                   || bad "/etc/shadow was deleted through a symlink claim"
+[ "$(cat "$LAB/outside/precious" 2>/dev/null)" = irreplaceable ] \
+    && ok "symlink-containing claim preserves the outside file" \
+    || bad "outside file was deleted through a symlink claim"
 
 # =====================================================================
 printf -- '\n-- CLAIM: "strictly POSIX" --\n'
@@ -231,7 +236,7 @@ printf -- '\n-- CLAIM: "strictly POSIX" --\n'
 bashisms=0
 for f in "$SRC/ois.sh" "$SRC"/core/*.sh; do
     # local is the most common leak
-    if grep -n '^\s*local ' "$f" 2>/dev/null | head -1 | grep -q .; then
+    if grep -n '^[[:space:]]*local ' "$f" 2>/dev/null | head -1 | grep -q .; then
         bad "bashism: 'local' in $f"; bashisms=$(( bashisms + 1 ))
     fi
     # [[ ]] double-bracket (exclude POSIX char classes like [[:cntrl:]])
@@ -247,7 +252,7 @@ for f in "$SRC/ois.sh" "$SRC"/core/*.sh; do
         bad "bashism: \$RANDOM in $f"; bashisms=$(( bashisms + 1 ))
     fi
     # test -nt / -ot
-    if grep -n ' -nt \| -ot ' "$f" 2>/dev/null | grep -v '#' | head -1 | grep -q .; then
+    if grep -En ' -nt | -ot ' "$f" 2>/dev/null | grep -v '#' | head -1 | grep -q .; then
         bad "bashism: -nt/-ot in $f"; bashisms=$(( bashisms + 1 ))
     fi
     # echo -e / echo -n
@@ -271,7 +276,7 @@ for f in "$SRC/ois.sh" "$SRC"/core/*.sh; do
     # Heuristic: printf "$var..." or printf '%s...' "$var" is safe;
     # printf "$var" as the ONLY arg is dangerous. Check for printf
     # where the format string starts with a variable.
-    if grep -nE 'printf\s+"?\$' "$f" 2>/dev/null | grep -v '%s' | grep -v '#' | head -1 | grep -q .; then
+    if grep -nE 'printf[[:space:]]+"?\$' "$f" 2>/dev/null | grep -v '%s' | grep -v '#' | head -1 | grep -q .; then
         bad "printf with variable format string in $f"
         fmtbugs=$(( fmtbugs + 1 ))
     fi
@@ -352,12 +357,16 @@ ois_app_exists "if" \
     || ok "shell keyword 'if' rejected (also acceptable)"
 
 # 18. Values with embedded newlines (impossible via read, but verify)
+mkproj nl
 printf 'app_name = nl\nbinary = nl\ndescription = line1\nline2\n' \
-    > "$LAB/src/kw/ois/ois.conf"
-$SH "$LAB/src/kw/ois/ois.sh" install --user --yes >/dev/null 2>&1
+    > "$LAB/src/nl/ois/ois.conf"
+$SH "$LAB/src/nl/ois/ois.sh" install --user --yes >/dev/null 2>&1 \
+    && ok "bare config line does not prevent a valid install" \
+    || bad "newline fixture did not install"
 # 'line2' should NOT become a key -- it has no '='
-ois_meta_get nl binary >/dev/null 2>&1 \
-    || ok "bare line after description is not parsed as a key (no injection)"
+ois_conf_load "$LAB/src/nl/ois/ois.conf" >/dev/null 2>&1
+check "bare line cannot extend description" "$OIS_APP_DESC" line1
+check "newline fixture records the intended binary" "$(ois_meta_get nl binary)" "$HOMEDIR/.local/bin/nl"
 
 # =====================================================================
 printf -- '\n-- ATTACK: hostile Git tags and releases --\n'
@@ -456,9 +465,9 @@ if command -v python3 >/dev/null 2>&1; then
     mkdir -p "$M2/releases/download/v1.0.0" "$LAB/rsrc2"
     printf '#!/bin/sh\necho chkapp\n' > "$LAB/rsrc2/chkapp"
     chmod +x "$LAB/rsrc2/chkapp"
-    ( cd "$LAB/rsrc2" && tar -czf "$M2/releases/download/v1.0.0/chkapp-1.0.0-linux-x86_64.tar.gz" chkapp )
+    ( cd "$LAB/rsrc2" && tar -czf "$M2/releases/download/v1.0.0/chkapp-1.0.0-$PLAT.tar.gz" chkapp )
     # Deliberately wrong hash
-    printf '0000000000000000000000000000000000000000000000000000000000000000  chkapp-1.0.0-linux-x86_64.tar.gz\n' \
+    printf '0000000000000000000000000000000000000000000000000000000000000000  chkapp-1.0.0-%s.tar.gz\n' "$PLAT" \
         > "$M2/releases/download/v1.0.0/SHA256SUMS"
     cat > "$M2/releases.atom" <<'ATOM'
 <feed><entry><id>tag:github.com,2008:Repository/2/v1.0.0</id></entry></feed>
@@ -472,7 +481,7 @@ ATOM
     ois_meta_set chkapp version "0.9.0"
     ois_meta_set chkapp github "chk/repo"
     out="$(timeout 60 $SH "$HOMEDIR/.local/bin/.chkapp-ois" update --yes 2>&1)"
-    printf '%s' "$out" | grep -qi "mismatch\|E-VERIFY" \
+    printf '%s' "$out" | grep -Eqi 'mismatch|E-VERIFY' \
         && ok "wrong checksum rejected with E-VERIFY" \
         || bad "wrong checksum was NOT rejected" "$out"
     check "version unchanged after checksum rejection" \
@@ -494,7 +503,9 @@ mkproj compat
 $SH "$LAB/src/compat/ois/ois.sh" install --user --yes >/dev/null 2>&1
 # Simulate a future OIS by changing the version in the script
 cp -r "$SRC" "$LAB/ois-future"
-sed -i 's/OIS_VERSION="[^"]*"/OIS_VERSION="99.0.0"/' "$LAB/ois-future/ois.sh"
+sed 's/OIS_VERSION="[^"]*"/OIS_VERSION="99.0.0"/' "$LAB/ois-future/ois.sh" > "$LAB/future.sh" || exit 1
+mv "$LAB/future.sh" "$LAB/ois-future/ois.sh"
+grep -q 'OIS_VERSION="99.0.0"' "$LAB/ois-future/ois.sh" || exit 1
 # The future version should be able to read the store and list the app
 out="$(sh "$LAB/ois-future/ois.sh" list --user 2>/dev/null)"
 printf '%s' "$out" | grep -q "compat" \
@@ -558,17 +569,24 @@ if command -v python3 >/dev/null 2>&1; then
 <feed><entry><id>tag:github.com,2008:Repository/3/v1.0.0</id></entry></feed>
 ATOM
     # Empty file as the "asset"
-    : > "$M3/releases/download/v1.0.0/truncapp-1.0.0-linux-x86_64.tar.gz"
+    : > "$M3/releases/download/v1.0.0/truncapp-1.0.0-$PLAT.tar.gz"
     ( cd "$LAB/mock3" && exec python3 -m http.server 8979 --bind 127.0.0.1 ) >/dev/null 2>&1 &
     SRV3=$!; sleep 1
     export OIS_GITHUB_BASE="http://127.0.0.1:8979" OIS_GITHUB_API="http://127.0.0.1:8979/api"
     mkproj truncapp
+    printf 'app_name = truncapp\nbinary = truncapp\ngithub = trunc/repo\n' > "$LAB/src/truncapp/ois/ois.conf"
     $SH "$LAB/src/truncapp/ois/ois.sh" install --user --yes >/dev/null 2>&1
     ois_meta_set truncapp version "0.9.0"
     out="$(timeout 60 $SH "$HOMEDIR/.local/bin/.truncapp-ois" update --yes 2>&1)"
+    rc=$?
+    [ "$rc" != 0 ] && ok "empty asset update fails" || bad "empty asset update succeeded"
+    printf '%s' "$out" | grep -q 'extraction failed' \
+        && ok "empty asset reached the extraction path" || bad "empty asset was never extracted" "$out"
     # Should fail gracefully (empty tarball = extraction failure)
     check "version unchanged after truncated download" \
         "$(ois_meta_get truncapp version)" "0.9.0"
+    check "binary unchanged after truncated download" \
+        "$("$HOMEDIR/.local/bin/truncapp")" 'I am truncapp'
     kill "$SRV3" 2>/dev/null; wait "$SRV3" 2>/dev/null || :
     export OIS_OFFLINE=1
 else

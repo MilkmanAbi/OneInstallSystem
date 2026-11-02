@@ -77,7 +77,7 @@ printf '#!/bin/sh\necho "alpha 1.1.0 prebuilt"\n' > "$LAB/pkg/alpha"
 chmod +x "$LAB/pkg/alpha"
 ( cd "$LAB/pkg" && tar -czf "$M/releases/download/v1.1.0/alpha-1.1.0-$PLAT.tar.gz" alpha )
 ( cd "$M/releases/download/v1.1.0" && \
-  sha=$(sha256sum "alpha-1.1.0-$PLAT.tar.gz" | cut -d' ' -f1) && \
+  sha=$(ois_sha256 "alpha-1.1.0-$PLAT.tar.gz") && \
   printf '%s  %s\n' "$sha" "alpha-1.1.0-$PLAT.tar.gz" > SHA256SUMS )
 
 # Source tarball for v1.2.0 (source-fallback test: no prebuilt asset).

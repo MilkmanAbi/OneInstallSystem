@@ -1,0 +1,195 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: POSIX production code and CI driver
+        run: |
+          shellcheck -s sh -x -P ois install.sh ois/ois.sh ois/core/*.sh
+          shellcheck -s sh check.sh tests/ci.sh
+
+  linux:
+    name: ${{ matrix.os }} / ${{ matrix.shell }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+        shell: [sh, dash, 'busybox sh', mksh, ksh, 'bash --posix', 'zsh --emulate sh']
+        include:
+          - os: ubuntu-22.04
+            shell: sh
+          - os: ubuntu-26.04
+            shell: sh
+          - os: ubuntu-24.04-arm
+            shell: sh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install every dependency; missing tools must fail, not skip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake curl python3 pkg-config zlib1g-dev busybox dash mksh ksh zsh
+      - name: Suites under the selected shell
+        env:
+          OIS_TEST_SHELL: ${{ matrix.shell }}
+        run: sh tests/ci.sh "$OIS_TEST_SHELL"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-${{ strategy.job-index }}
+          path: test-results/
+
+  macos:
+    name: ${{ matrix.os }} / native BSD userland
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, macos-26, macos-26-intel]
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install cmake pkgconf coreutils dash ksh zlib
+      - name: Native tools with only timeout added from GNU coreutils
+        run: |
+          mkdir -p "$RUNNER_TEMP/ois-tools"
+          ln -s "$(brew --prefix coreutils)/bin/gtimeout" "$RUNNER_TEMP/ois-tools/timeout"
+          export PATH="$RUNNER_TEMP/ois-tools:$PATH"
+          PKG_CONFIG_PATH="$(brew --prefix zlib)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          export PKG_CONFIG_PATH
+          sh tests/ci.sh sh 'bash --posix' 'zsh --emulate sh' dash ksh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.os }}
+          path: test-results/
+
+  musl:
+    name: Alpine / musl / BusyBox userland
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run in musl without requiring Node actions to run inside Alpine
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src alpine:3.22 sh -ec '
+            apk add --no-cache build-base cmake curl python3 pkgconf zlib-dev bash dash mksh coreutils procps
+            sh tests/ci.sh sh "busybox sh" dash "bash --posix" mksh
+          '
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: alpine-musl
+          path: test-results/
+
+  freebsd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg install -y cmake curl python3 pkgconf dash bash ksh coreutils
+          run: |
+            set -eu
+            export PATH="/usr/local/bin:/usr/local/sbin:$PATH"
+            mkdir -p /tmp/ois-ci-tools
+            ln -sf /usr/local/bin/gtimeout /tmp/ois-ci-tools/timeout
+            export PATH="/tmp/ois-ci-tools:$PATH"
+            sh tests/ci.sh sh dash 'bash --posix' ksh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: freebsd
+          path: test-results/
+
+  openbsd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg_add cmake curl python3 pkgconf dash bash coreutils
+          run: |
+            set -eu
+            export PATH="/usr/local/bin:/usr/local/sbin:$PATH"
+            # OpenBSD Python packages expose versioned binaries.
+            mkdir -p /tmp/ois-ci-tools
+            for py in /usr/local/bin/python3.*; do
+              case "$py" in *-config) continue ;; esac
+              if [ -x "$py" ]; then ln -sf "$py" /tmp/ois-ci-tools/python3; break; fi
+            done
+            ln -sf /usr/local/bin/gtimeout /tmp/ois-ci-tools/timeout
+            export PATH="/tmp/ois-ci-tools:$PATH"
+            sh tests/ci.sh sh ksh dash 'bash --posix'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openbsd
+          path: test-results/
+
+  netbsd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          usesh: true
+          prepare: /usr/sbin/pkg_add cmake curl python312 pkgconf dash bash coreutils
+          run: |
+            set -eu
+            export PATH="/usr/pkg/bin:/usr/pkg/sbin:$PATH"
+            mkdir -p /tmp/ois-ci-tools
+            ln -sf /usr/pkg/bin/python3.12 /tmp/ois-ci-tools/python3
+            ln -sf /usr/pkg/bin/gtimeout /tmp/ois-ci-tools/timeout
+            export PATH="/tmp/ois-ci-tools:$PATH"
+            sh tests/ci.sh sh ksh dash 'bash --posix'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: netbsd
+          path: test-results/
+
+  soak:
+    name: Repeated concurrency and adversarial checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y build-essential cmake curl python3 pkg-config zlib1g-dev dash
+      - name: Three rounds, C locale, restrictive umask, TMPDIR with spaces
+        env:
+          OIS_STRESS_ROUNDS: '3'
+        run: |
+          umask 077
+          export TMPDIR="$RUNNER_TEMP/ois scratch"
+          mkdir -p "$TMPDIR"
+          sh tests/ci.sh dash
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soak
+          path: test-results/

@@ -3,7 +3,8 @@
 set -e
 cd "$(dirname "$0")"
 echo "== shellcheck (POSIX sh mode) =="
-shellcheck -s sh -x -P ois ois/ois.sh ois/core/*.sh && echo "  clean"
+shellcheck -s sh -x -P ois ois/ois.sh ois/core/*.sh
+echo "  clean"
 echo
 for sh_bin in sh dash "busybox sh" mksh ksh "bash --posix" "zsh --emulate sh"; do
     cmd="${sh_bin%% *}"

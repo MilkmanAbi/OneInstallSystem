@@ -115,7 +115,7 @@ optional and degrades cleanly.
 
 ```
 shellcheck -s sh    clean
-sh dash busybox-ash mksh ksh bash--posix    304 tests, 0 failures on each
+sh dash busybox-ash mksh ksh bash--posix    seven suites; see CI for per-platform results
 ```
 
 ---
@@ -149,7 +149,7 @@ ois/                the installer — copy this
   core/*.sh
 docs/               documentation
 examples/           four runnable projects
-tests/              304 tests across seven suites
+tests/              seven test suites
 check.sh            shellcheck + every suite on every shell present
 ```
 
@@ -187,30 +187,34 @@ rejected and logged.
 
 ## Continuous integration
 
-`.github/workflows/check.yml` runs the gate on every push: shellcheck
-plus all seven suites on six shells under Linux, and again on macOS for
-real BSD userland. Embedding OIS in your app is the primary workflow;
+`.github/workflows/ci.yml` runs ShellCheck and all seven suites across
+Linux/glibc, Alpine/musl, macOS Intel/ARM, and FreeBSD/OpenBSD/NetBSD VMs.
+It includes seven shell implementations/modes and repeated stress rounds.
+See [test coverage and limitations](docs/TESTS.md) for exact scope.
+Embedding OIS in your app is the primary workflow;
 this is just how *OIS itself* stays portable.
 
 ## Development
 
 ```sh
 sh check.sh              # shellcheck + all suites on every shell present
-sh tests/run.sh          # store, claims, config, path safety      (34)
-sh tests/update.sh       # version compare, fetch, rollback         (34)
-sh tests/stress.sh       # concurrency, kill -9, hostile input      (43)
-sh tests/adversarial.sh  # security audit: every attack vector        (39)
-sh tests/deps.sh         # alias table, probing, pm abstraction     (62)
-sh tests/path.sh         # shell PATH add/retract (macOS-critical)   (16)
-sh tests/v3.sh           # hooks, migrations, services, channels    (82)
+sh tests/run.sh          # install/store, claims, config, path safety
+sh tests/update.sh       # version compare, fetch, rollback
+sh tests/stress.sh       # concurrency, kill -9, hostile input
+sh tests/adversarial.sh  # adversarial regression fixtures
+sh tests/deps.sh         # alias table, probing, pm abstraction
+sh tests/path.sh         # shell PATH add/retract (macOS-critical)
+sh tests/v3.sh           # hooks, migrations, services, channels
+sh tests/ci.sh dash      # strict driver; full harness runs under dash
 ```
 
 Suites are hermetic: `OIS_ROOT`, `HOME`, and the XDG variables are
 redirected to a temp directory, and GitHub is a local
-`python3 -m http.server`. Nothing touches your real system.
+`python3 -m http.server`. Run the full crash/adversarial gate on disposable
+CI hosts; the root-only Nix fixture temporarily creates `/etc/NIXOS`.
 
-`check.sh` skips shells that aren't installed, so it's safe to run
-anywhere. Adding it to CI is what keeps "strictly POSIX" true over time.
+`check.sh` skips shells that aren't installed. The CI driver requires its
+requested shells and dependencies, and rejects unexpected coverage skips.
 
 ---
 
