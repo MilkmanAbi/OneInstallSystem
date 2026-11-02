@@ -498,7 +498,7 @@ fi
 printf -- '\n-- ATTACK: two OIS versions managing the same store --\n'
 # =====================================================================
 
-# 23. Install with v3, then operate on the same store with a "v4" binary.
+# 23. Install with current OIS, then read the store with a simulated future version.
 #     The store format should be forward-compatible (just key=value files).
 mkproj compat
 $SH "$LAB/src/compat/ois/ois.sh" install --user --yes >/dev/null 2>&1

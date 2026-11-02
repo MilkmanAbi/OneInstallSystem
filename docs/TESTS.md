@@ -1,6 +1,6 @@
 # Test coverage and CI
 
-Seven suites exercise OIS's POSIX shell runtime. Assertion totals vary with
+Eight suites exercise OIS's POSIX shell runtime. Assertion totals vary with
 platform, privilege, and available tools; the per-suite summaries in CI are
 the authority. Old fixed totals and numbered coverage tables overstated
 what some fixtures actually tested.
@@ -11,9 +11,16 @@ what some fixtures actually tested.
 | `update.sh` | Version ordering, local release feed, TTL/force/offline/CI checks, verified prebuilt update, rollback twice, source fallback, bad checksum refusal and unreachable server |
 | `deps.sh` | Alias tables, declarations and injection, tool/library probing, generated package commands, parseable JSON, dependency diagnostics, version ordering, MacPorts mapping, real-user detection and mocked next-best selection |
 | `path.sh` | Startup-file creation, idempotency, user-content preservation, multiple managed directories, retraction, system-prefix exemption and fish config |
+| `compat.sh` | Real v3/v4 source archives, version/vendor consistency, mixed stores, pinned hooks, immutable runtimes, legacy claims, old/new update and rollback, reference transfer, GC and uninstall isolation |
 | `v3.sh` | Channels, captured hooks, hook failure, migration selection/order/failure reporting, shimmed systemd/launchd/OpenRC, lockfile drift, extra binaries, hostile paths, Nix guard, plan and destructive prompt defaults |
 | `stress.sh` | Ten apps in one store, HOME containing a space, four concurrent installs, kill/recovery/reinstall, 20 writers producing 1,000 claims, folding/purging, real CMake build and failed reinstall, mocked remote install, hostile input, doctor and structured error journal |
 | `adversarial.sh` | Destination symlinks, interrupted build and live/dead locks, injection, claim conflicts, symlink traversal fixture, portability heuristics, concurrent same-app and install/uninstall operations, hostile release tags, checksum refusal, future-version store reading, modified binary removal and truncated downloads |
+
+`compat.sh` additionally verifies genuine v3.0.0/v4.0.0 archived source,
+mixed-store reads and claims, pinned hooks and immutable old runtimes,
+current updates with legacy rollback, reinstallation/reference transfer,
+later legacy installs, old/new garbage collection and uninstall isolation.
+All example runtime copies must match the released source byte for byte.
 
 ## Running locally
 
@@ -21,6 +28,7 @@ what some fixtures actually tested.
 sh check.sh                    # lint, then all suites for installed shells
 sh tests/run.sh dash           # historical entry point: harness uses host sh
 dash tests/run.sh dash         # harness + sourced code + child OIS use dash
+sh tests/compat.sh dash         # old/new runtime interoperability
 sh tests/ci.sh dash 'bash --posix'  # strict CI driver
 OIS_STRESS_ROUNDS=3 sh tests/ci.sh dash
 ```
@@ -111,6 +119,19 @@ limits. Log artifacts expire after three days.
   getfqdn is patched to fail, ensuring the fixture has no DNS dependency.
 - NetBSD uses its native cc/c++ toolchain instead of assuming clang exists.
   CI clears host compiler overrides and bypasses proxies for loopback.
+
+## Release compatibility
+
+Historical sources and SHA-256 provenance live in `tests/fixtures/`; they
+are not regenerated when the current version changes. No Git/network
+access is needed to obtain old code during CI. v4.1 keeps the v3/v4 config
+and store formats. Existing apps retain their pinned runtime until a
+reinstall with newer vendored code; other apps and user data stay intact.
+
+The mixed-version tests exposed and now cover atomic `runtime/current`
+publication, releasing the prior runtime reference on reinstallation, and
+repairing an active marker left inconsistent by an older installer before
+garbage collection. See [the changelog](../CHANGELOG.md).
 
 ## Limits of the evidence
 

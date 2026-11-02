@@ -2,3 +2,4 @@
 *.sh text eol=lf
 *.yml text eol=lf
 *.conf text eol=lf
+tests/fixtures/*.tar.gz binary

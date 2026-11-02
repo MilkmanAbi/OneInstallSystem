@@ -1,5 +1,7 @@
 # AI-CONTEXT
 
+Current runtime: **4.1.0**. Release history: [CHANGELOG.md](../CHANGELOG.md).
+
 Dense reference for an AI agent working on a project that uses OIS, or
 on OIS itself. Facts only, no prose. Humans: the other docs are nicer.
 
@@ -50,7 +52,9 @@ ois/core/system.sh  OIS_OS OIS_ARCH OIS_PM OIS_SUDO OIS_IS_ROOT, XDG dirs,
                     real ois_priv definition
 ois/core/store.sh   store layout, lock, meta, manifest, claims, runtime refcount
 ois/core/conf.sh    ois.conf parser (no eval, no sed)
+ois/core/pm.sh      package-manager queries, installation and privilege handling
 ois/core/deps.sh    alias table, dep parsing, probing, PM install commands
+ois/core/path.sh    managed shell PATH blocks and reference-counted retraction
 ois/core/errors.sh  ois_fail, ois_retry, ois_run_logged, ois_need_tool, state
 ois/core/json.sh    --json rendering
 ois/core/version.sh ois_ver_cmp, ois_ver_older
@@ -62,7 +66,8 @@ ois/core/service.sh ois_service_install/stop/start/remove/status, backend detect
 ```
 
 Source order in `ois.sh` matters: utils → system → store → conf →
-version → fetch → **deps → errors** → json → build → update.
+version → fetch → pm → deps → path → errors → json → build → hooks →
+service → update.
 `errors.sh:ois_need_tool` calls `deps.sh:ois_alias_pkg`.
 
 ---
@@ -223,19 +228,25 @@ date) · `2` `check`: unknown · `130` SIGINT · `143` SIGTERM.
 
 ## TESTS
 
-```
-tests/run.sh      34  store, claims, config, path safety
-tests/update.sh   34  version compare, fetch, update, rollback (mock GitHub)
-tests/stress.sh   43  concurrency, kill -9, hostile input, CMake e2e, remote
-tests/deps.sh     43  alias table, parsing, probing, JSON
-check.sh              shellcheck + all suites on every shell present
-```
+Eight shell suites: run, update, deps, path, v3, compat, adversarial, stress.
+Assertion totals depend on platform/privilege; CI summaries are authoritative.
+`tests/ci.sh` runs each harness under its selected shell and rejects missing
+dependencies, failed/missing success summaries, unexpected skips and timeouts.
+`check.sh` remains the local convenience gate for installed shells.
 
-Run one: `sh tests/run.sh [shell]`. Everything is hermetic — `OIS_ROOT`,
-`HOME`, and XDG vars are redirected to a temp dir; `OIS_GITHUB_BASE` /
-`OIS_GITHUB_API` point at a local `python3 -m http.server`.
+`compat.sh` uses checksum-pinned real v3.0.0/v4.0.0 source snapshots. It checks
+shared-store operation, claims, old/new update/rollback, runtime pinning,
+reference transfer, GC and uninstall isolation. Never replace those fixtures
+with relabeled current code. Example runtime files must match the root runtime.
 
-`stress.sh` deliberately uses a `$HOME` containing a space.
+Fixtures isolate HOME, OIS_ROOT and XDG directories. HTTP servers bind numeric
+loopback on OS-assigned ports and bypass reverse DNS. A Python preflight test
+requires serving a payload with getfqdn disabled. Some crash tests kill fixture
+processes; the root-only Nix fixture temporarily touches /etc/NIXOS. Use disposable
+CI hosts. See TESTS.md for exact limits and supported native platforms.
+
+CI uses standard hosted runners, two-vCPU BSD VMs, OIS_MAX_JOBS=2, 15-minute
+suite timeouts with a 30-second forced-kill grace, and explicit job timeouts.
 
 ---
 
@@ -245,7 +256,7 @@ Run one: `sh tests/run.sh [shell]`. Everything is hermetic — `OIS_ROOT`,
 word if the alias table knows it. Verify with `sh ois/ois.sh deps`.
 
 **Support a new package manager:** add detection in `system.sh`, a
-column in `_ois_alias_row` (13 fields, pipe-separated), a case in
+column in `_ois_alias_row` (up to 15 fields, pipe-separated), a case in
 `_ois_alias_col`, and a case in `ois_pm_install_cmd`.
 
 **Add an alias-table entry:** one line in `_ois_alias_row`, fields

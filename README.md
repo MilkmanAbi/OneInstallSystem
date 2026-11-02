@@ -1,6 +1,6 @@
 # OIS — OneInstallSystem
 
-**v4.0.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD · Termux/Android
+**v4.1.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD · Termux/Android
 
 A drop-in installer, updater, and uninstaller for your app. Pure POSIX
 `sh`. You vendor two things into your repo and edit one file; your users
@@ -60,6 +60,18 @@ ois plan                     # dry run: what would install do? (changes nothing)
 - **Channels & signing.** stable/beta/any update tracks, and
   minisign-verified releases for update integrity.
 
+## New in v4.1: cross-platform validation and compatibility
+
+OIS now runs its complete portability gate across Linux/glibc, Alpine/musl,
+Intel/ARM macOS, FreeBSD, OpenBSD and NetBSD. v4.1 fixes dependency alias
+parsing under ksh/mksh, spaced HOME handling, installed-runtime detection,
+and NetBSD's default compiler. CI uses standard hosted runners, bounded
+timeouts, and two build jobs.
+
+Existing v3/v4 configs, app state, claims, pinned hooks and versioned
+runtimes remain supported. See [CHANGELOG.md](CHANGELOG.md) for changes,
+compatibility checks and upgrade instructions.
+
 ## New in v4: macOS and BSD are first-class
 
 Linux was always easy. v4 makes macOS and the BSDs just as boring — the
@@ -115,7 +127,7 @@ optional and degrades cleanly.
 
 ```
 shellcheck -s sh    clean
-sh dash busybox-ash mksh ksh bash--posix    seven suites; see CI for per-platform results
+sh dash busybox-ash mksh ksh bash--posix    eight suites; see CI for per-platform results
 ```
 
 ---
@@ -149,7 +161,7 @@ ois/                the installer — copy this
   core/*.sh
 docs/               documentation
 examples/           four runnable projects
-tests/              seven test suites
+tests/              eight test suites
 check.sh            shellcheck + every suite on every shell present
 ```
 
@@ -187,7 +199,7 @@ rejected and logged.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs ShellCheck and all seven suites across
+`.github/workflows/ci.yml` runs ShellCheck and all eight suites across
 Linux/glibc, Alpine/musl, macOS Intel/ARM, and FreeBSD/OpenBSD/NetBSD VMs.
 It includes seven shell implementations/modes and repeated stress rounds.
 See [test coverage and limitations](docs/TESTS.md) for exact scope.
@@ -205,6 +217,7 @@ sh tests/adversarial.sh  # adversarial regression fixtures
 sh tests/deps.sh         # alias table, probing, pm abstraction
 sh tests/path.sh         # shell PATH add/retract (macOS-critical)
 sh tests/v3.sh           # hooks, migrations, services, channels
+sh tests/compat.sh       # real v3/v4 runtimes sharing a store with v4.1
 sh tests/ci.sh dash      # strict driver; full harness runs under dash
 ```
 

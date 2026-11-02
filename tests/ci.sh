@@ -10,7 +10,7 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset CC CXX
 export OIS_MAX_JOBS=2 CARGO_BUILD_JOBS=2 GOMAXPROCS=2
 export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
-for tool in python3 curl cmake cc make pkg-config timeout dash; do
+for tool in python3 curl cmake cc make pkg-config timeout dash tar cmp; do
     command -v "$tool" >/dev/null 2>&1 || { echo "Missing required tool: $tool" >&2; exit 1; }
 done
 mkdir -p test-results
@@ -51,7 +51,7 @@ for shell in "$@"; do
         # shellcheck disable=SC2086
         $shell -n "$script" || exit 1
     done < test-results/scripts.txt
-    for suite in run update deps path v3 adversarial stress; do
+    for suite in run update deps path v3 compat adversarial stress; do
         count=1
         case "$suite" in stress|adversarial) count=$rounds ;; esac
         round=1
