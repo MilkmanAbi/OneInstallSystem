@@ -14,3 +14,8 @@ git archive --format=tar.gz --output=tests/fixtures/ois-VERSION.tar.gz COMMIT oi
 
 Do not refresh these when bumping the current OIS version. They deliberately
 preserve the old implementations and store/config formats.
+
+The generated app Makefiles in `compat.sh` wait one second before creating
+their artifact. Historical v3's strict freshness check uses `find -newer`;
+BusyBox compares those timestamps at whole-second resolution. The delay
+keeps the positive fixture valid without patching the archived runtime.

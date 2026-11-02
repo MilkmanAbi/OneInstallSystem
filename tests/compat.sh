@@ -42,7 +42,10 @@ mkproj() {
     cp -R "$_ct_runtime" "$LAB/src/$_ct_name/ois"
     printf '1.0.0\n' > "$LAB/src/$_ct_name/VERSION"
     printf '#!/bin/sh\necho "%s 1.0.0"\n' "$_ct_name" > "$LAB/src/$_ct_name/$_ct_name.src"
-    printf 'all:\n\tcp %s.src %s && chmod +x %s\n' "$_ct_name" "$_ct_name" "$_ct_name" > "$LAB/src/$_ct_name/Makefile"
+    # Actual v3 requires an artifact newer than its build-start stamp;
+    # BusyBox find compares at whole-second resolution. Model a real build
+    # crossing that boundary without changing the archived implementation.
+    printf 'all:\n\tsleep 1\n\tcp %s.src %s && chmod +x %s\n' "$_ct_name" "$_ct_name" "$_ct_name" > "$LAB/src/$_ct_name/Makefile"
     cat > "$LAB/src/$_ct_name/ois/ois.conf" <<EOF
 app_name = $_ct_name
 binary = $_ct_name
