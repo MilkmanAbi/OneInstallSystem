@@ -225,6 +225,8 @@ EOF
         bad "cmake install failed"
     fi
     # failure diagnostics: break the source, reinstall, expect E-BUILD + log
+    # BSD make can compare mtimes at whole-second resolution.
+    sleep 1
     printf 'this is not C\n' > "$P/src/main.c"
     out="$(timeout 120 $SH "$P/ois/ois.sh" install --user --yes 2>&1)" && \
         bad "broken cmake build reported success"

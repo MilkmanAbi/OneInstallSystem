@@ -106,10 +106,10 @@ _ois_alias_col() {
 _ois_row_field() {
     _rf_r="$1" ; _rf_n="$2" ; _rf_i=1
     while [ "$_rf_i" -lt "$_rf_n" ]; do
-        case "$_rf_r" in *\|*) _rf_r="${_rf_r#*|}" ;; *) printf ''; return 1 ;; esac
+        case "$_rf_r" in *\|*) _rf_r="${_rf_r#*"|"}" ;; *) printf ''; return 1 ;; esac
         _rf_i=$(( _rf_i + 1 ))
     done
-    _rf_v="${_rf_r%%|*}"
+    _rf_v="${_rf_r%%"|"*}"
     [ "$_rf_v" = "-" ] && { printf ''; return 1; }
     printf '%s' "$_rf_v"
 }

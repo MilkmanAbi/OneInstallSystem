@@ -580,8 +580,10 @@ ATOM
     out="$(timeout 60 $SH "$HOMEDIR/.local/bin/.truncapp-ois" update --yes 2>&1)"
     rc=$?
     [ "$rc" != 0 ] && ok "empty asset update fails" || bad "empty asset update succeeded"
-    printf '%s' "$out" | grep -q 'extraction failed' \
-        && ok "empty asset reached the extraction path" || bad "empty asset was never extracted" "$out"
+    # BSD tar accepts an empty input as an empty archive; either extraction
+    # failure or rejecting its missing executable proves payload validation.
+    printf '%s' "$out" | grep -Eq "extraction failed|no 'truncapp' inside asset" \
+        && ok "empty asset reached payload validation" || bad "empty asset bypassed payload validation" "$out"
     # Should fail gracefully (empty tarball = extraction failure)
     check "version unchanged after truncated download" \
         "$(ois_meta_get truncapp version)" "0.9.0"

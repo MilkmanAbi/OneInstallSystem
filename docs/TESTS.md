@@ -78,6 +78,16 @@ All shell scripts, including the examples, receive syntax checks.
 - Truncated-download checks require failure, evidence of extraction, and
   preservation of both installed version and binary.
 - Portability greps use POSIX character classes and extended alternation.
+- Literal alias-table separators are quoted in parameter-expansion patterns
+  so ksh/mksh cannot interpret them as alternation; three regressions cover
+  middle/last columns and missing-value placeholders.
+- PATH setup iterates quoted startup-file candidates, preserving spaced
+  HOME paths. The PATH suite always uses such a HOME.
+- Temporary environment assignments to shell functions are isolated in
+  subshells; POSIX permits assignment lifetime to differ between shells.
+- The CMake failure fixture crosses a whole-second timestamp boundary for
+  BSD make. Empty archives must fail payload validation; BSD tar may accept
+  an empty input and leave the missing-executable check to OIS.
 
 ## Limits of the evidence
 

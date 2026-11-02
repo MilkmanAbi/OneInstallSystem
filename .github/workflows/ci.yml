@@ -115,6 +115,7 @@ jobs:
             export PATH="/usr/local/bin:/usr/local/sbin:$PATH"
             mkdir -p /tmp/ois-ci-tools
             ln -sf /usr/local/bin/gtimeout /tmp/ois-ci-tools/timeout
+            ln -sf /usr/local/bin/ksh93 /tmp/ois-ci-tools/ksh
             export PATH="/tmp/ois-ci-tools:$PATH"
             sh tests/ci.sh sh dash 'bash --posix' ksh
       - uses: actions/upload-artifact@v4
@@ -131,7 +132,9 @@ jobs:
       - uses: vmactions/openbsd-vm@v1
         with:
           usesh: true
-          prepare: pkg_add cmake curl python3 pkgconf dash bash coreutils
+          prepare: |
+            set -eu
+            pkg_add cmake curl 'python%3' 'dash--' bash coreutils
           run: |
             set -eu
             export PATH="/usr/local/bin:/usr/local/sbin:$PATH"

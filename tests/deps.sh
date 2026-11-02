@@ -30,6 +30,9 @@ OIS_VERSION="test"
 
 # ---------------------------------------------------------------------
 printf -- '-- alias table --\n'
+check "literal pipe separates alias columns" "$(_ois_row_field 'left|middle|right' 2)" middle
+check "last alias column survives" "$(_ois_row_field 'left|middle|right' 3)" right
+_ois_row_field 'left|-' 2 >/dev/null && bad "placeholder alias accepted" || ok "placeholder alias rejected"
 check "ncurses pkg-config name is ncursesw" "$(ois_alias_pc ncurses)" "ncursesw"
 check "ncurses header is ncurses.h" "$(ois_alias_header ncurses)" "ncurses.h"
 ois_alias_pc git >/dev/null 2>&1 && bad "git claims a pkg-config name" \

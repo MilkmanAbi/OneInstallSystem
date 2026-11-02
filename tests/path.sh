@@ -18,7 +18,7 @@ rm -rf "$LAB"; mkdir -p "$LAB"
 printf '\n=== OIS v4 path suite (%s) ===\n\n' "$SH"
 
 . "$SRC/core/utils.sh"
-OIS_OS="macos"; OIS_HOME="$LAB/home"; OIS_VERBOSE=0
+OIS_OS="macos"; OIS_HOME="$LAB/ho me"; OIS_VERBOSE=0
 export OIS_OS OIS_HOME
 . "$SRC/core/path.sh"
 

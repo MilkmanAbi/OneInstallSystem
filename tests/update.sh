@@ -126,9 +126,9 @@ if ois_check_due alpha 0; then bad "check due immediately after a check" \
     "TTL should suppress it"; else ok "second check within TTL is suppressed"; fi
 ois_check_due alpha 1 && ok "explicit --force bypasses the TTL" \
                       || bad "force did not bypass TTL"
-OIS_OFFLINE=1 ois_check_due alpha 1 && bad "OIS_OFFLINE ignored" \
+( OIS_OFFLINE=1 ois_check_due alpha 1 ) && bad "OIS_OFFLINE ignored" \
                                     || ok "OIS_OFFLINE suppresses even forced checks"
-CI=1 OIS_IS_CI=yes ois_check_due alpha 0 && bad "CI ignored" \
+( CI=1 OIS_IS_CI=yes ois_check_due alpha 0 ) && bad "CI ignored" \
                                          || ok "CI suppresses background checks"
 
 # ---------------------------------------------------------------------
