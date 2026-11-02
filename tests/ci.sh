@@ -1,11 +1,15 @@
 #!/bin/sh
 # Strict CI driver. Each argument is a shell command, e.g. 'bash --posix'.
-# Run suites sequentially: their HTTP ports and attack sentinels are shared.
+# Run suites sequentially: attack sentinels and crash-process names are shared.
 set -eu
 cd "$(dirname "$0")/.."
 export LC_ALL=C
 unset GITHUB_TOKEN GH_TOKEN OIS_OFFLINE OIS_ROOT OIS_ASSUME_YES
 unset OIS_ALLOW_NIX OIS_PKG_MANAGER TERMUX_VERSION
+unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+unset CC CXX
+export OIS_MAX_JOBS=2 CARGO_BUILD_JOBS=2 GOMAXPROCS=2
+export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
 for tool in python3 curl cmake cc make pkg-config timeout dash; do
     command -v "$tool" >/dev/null 2>&1 || { echo "Missing required tool: $tool" >&2; exit 1; }
 done
@@ -42,7 +46,7 @@ for shell in "$@"; do
         # shellcheck disable=SC2086
         $shell -n "$script" || exit 1
     done < test-results/scripts.txt
-    for suite in run update deps path v3 stress adversarial; do
+    for suite in run update deps path v3 adversarial stress; do
         count=1
         case "$suite" in stress|adversarial) count=$rounds ;; esac
         round=1
@@ -51,7 +55,7 @@ for shell in "$@"; do
             printf '\n== %s / %s / round %s ==\n' "$shell" "$suite" "$round"
             # The harness AND all sourced functions run under the selected shell.
             # shellcheck disable=SC2086
-            if timeout 900 $shell "tests/$suite.sh" "$shell" > "$log" 2>&1; then
+            if timeout -k 30 900 $shell "tests/$suite.sh" "$shell" > "$log" 2>&1; then
                 cat "$log"
                 grep -Eq '^=== [1-9][0-9]* passed, 0 failed ===$' "$log" || failed=1
                 # NixOS's privileged /etc marker is the sole permitted skip.
@@ -63,6 +67,9 @@ for shell in "$@"; do
                 cat "$log"
                 failed=1
             fi
+            # Surface the first failure promptly; other platform jobs keep
+            # running independently through matrix.fail-fast=false.
+            [ "$failed" = 0 ] || exit "$failed"
             round=$((round + 1))
         done
     done

@@ -420,6 +420,26 @@ check "the two that ran before the failure are recorded" \
     "$OIS_MIGRATIONS_APPLIED" "1.1.0 1.2.0"
 check "the failing one is named" "$OIS_MIGRATION_FAILED" "2.0.0"
 
+printf -- '\n-- shared-machine build parallelism ceiling --\n'
+if (
+    unset CC CXX
+    . "$SRC/core/build.sh"
+    OIS_OS=netbsd OIS_BUILD_JOBS=1
+    _ois_build_env
+    [ "$CC" = cc ] && [ "$CXX" = c++ ]
+); then ok "NetBSD defaults to its native cc/c++ toolchain"
+else bad "NetBSD default compiler requires a missing clang"; fi
+for spec in '999:2:2' '1:2:1' '0:2:2' '3:invalid:3'; do
+    jobs=${spec%%:*}; rest=${spec#*:}; ceiling=${rest%%:*}; expected=${rest#*:}
+    if (
+        . "$SRC/core/build.sh"
+        OIS_OS=linux OIS_BUILD_JOBS="$jobs" OIS_MAX_JOBS="$ceiling"
+        _ois_build_env
+        [ "$OIS_JOBS" = "$expected" ]
+    ); then ok "jobs=$jobs ceiling=$ceiling resolves to $expected"
+    else bad "build parallelism ceiling failed for $spec"; fi
+done
+
 printf '\n=== %s passed, %s failed ===\n\n' "$PASS" "$FAIL"
 rm -rf "$LAB"
 [ "$FAIL" = 0 ]

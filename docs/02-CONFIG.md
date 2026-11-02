@@ -210,6 +210,7 @@ cache  = $XDG_CACHE_HOME/ytcui
 | `OIS_OFFLINE=1` | No network. Update checks silently skipped. |
 | `OIS_UPDATE_TTL` | Seconds between background checks. Default `86400`. |
 | `OIS_FETCH_TIMEOUT` | Per-request timeout in seconds. Default `15`. |
+| `OIS_MAX_JOBS` | Optional positive ceiling for Make/CMake parallelism, including `jobs=auto` and unlimited `jobs=0`. CI sets `2`. |
 | `GITHUB_TOKEN` | Raises the API rate limit from 60/h to 5000/h. |
 | `OIS_ASSUME_YES=1` | Same as `--yes`. |
 | `OIS_VERBOSE=1` | Same as `--verbose`. |

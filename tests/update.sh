@@ -10,6 +10,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/../ois"
 LAB="${TMPDIR:-/tmp}/ois-upd.$$"
 PASS=0 FAIL=0
+. "$HERE/http.sh"
 
 export OIS_ROOT="$LAB/store" HOME="$LAB/home"
 export XDG_DATA_HOME="$LAB/home/.local/share" XDG_CONFIG_HOME="$LAB/home/.config"
@@ -88,16 +89,10 @@ printf 'all:\n\tcp alpha.src alpha && chmod +x alpha\n' > "$LAB/srctree/alpha-1.
 ( cd "$LAB/srctree" && tar -czf "$M/archive/refs/tags/v1.2.0.tar.gz" alpha-1.2.0 )
 
 # Serve it.
-PORT=8931
-( cd "$LAB/mock" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 ) >/dev/null 2>&1 &
-SRV=$!
-trap 'kill $SRV 2>/dev/null' EXIT INT TERM
-i=0; while [ $i -lt 30 ]; do
-    curl -fso /dev/null "http://127.0.0.1:$PORT/" 2>/dev/null && break
-    sleep 0.3; i=$(( i + 1 ))
-done
-export OIS_GITHUB_BASE="http://127.0.0.1:$PORT"
-export OIS_GITHUB_API="http://127.0.0.1:$PORT/api"
+ois_test_http_start "$LAB/mock" update
+SRV=$OIS_TEST_HTTP_PID
+export OIS_GITHUB_BASE="$OIS_TEST_HTTP_URL"
+export OIS_GITHUB_API="$OIS_TEST_HTTP_URL/api"
 
 # -- install alpha 1.0.0 from a local project -------------------------
 mkdir -p "$LAB/src/alpha/ois/core"
@@ -169,7 +164,7 @@ check "binary untouched after refused update" "$("$BIN")" "alpha 1.2.0 from sour
 check "meta version untouched" "$(ois_meta_get alpha version)" "1.2.0"
 
 printf -- '\n-- server unreachable: current install keeps working --\n'
-kill $SRV 2>/dev/null; wait $SRV 2>/dev/null || :
+ois_test_http_stop "$SRV"
 $SH "$HOME/.local/bin/.alpha-ois" update --yes >/dev/null 2>&1 \
     && bad "update reported success with server down" \
     || ok "update fails cleanly when unreachable"

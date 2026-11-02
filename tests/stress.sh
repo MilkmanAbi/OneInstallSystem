@@ -11,6 +11,7 @@ SRC="$HERE/../ois"
 LAB="${TMPDIR:-/tmp}/ois-stress.$$"
 HOMEDIR="$LAB/ho me"
 PASS=0 FAIL=0
+. "$HERE/http.sh"
 
 export OIS_ROOT="$LAB/store" HOME="$HOMEDIR"
 export XDG_DATA_HOME="$HOMEDIR/.local/share" XDG_CONFIG_HOME="$HOMEDIR/.config"
@@ -260,13 +261,9 @@ EOF
     printf 'all:\n\tcp greeter.src greeter && chmod +x greeter\n' > "$LAB/rsrc/greeter-0.3.0/Makefile"
     # NOTE: no ois.conf in the repo -- synthesis path.
     ( cd "$LAB/rsrc" && tar -czf "$M/archive/refs/tags/v0.3.0.tar.gz" greeter-0.3.0 )
-    ( cd "$LAB/mock" && exec python3 -m http.server 8933 --bind 127.0.0.1 ) >/dev/null 2>&1 &
-    SRV=$!
-    i=0; while [ $i -lt 30 ]; do
-        curl -fso /dev/null "http://127.0.0.1:8933/" 2>/dev/null && break
-        sleep 0.3; i=$(( i + 1 ))
-    done
-    export OIS_GITHUB_BASE="http://127.0.0.1:8933" OIS_GITHUB_API="http://127.0.0.1:8933/api"
+    ois_test_http_start "$LAB/mock" remote
+    SRV=$OIS_TEST_HTTP_PID
+    export OIS_GITHUB_BASE="$OIS_TEST_HTTP_URL" OIS_GITHUB_API="$OIS_TEST_HTTP_URL/api"
     if timeout 120 $SH "$HOMEDIR/.local/bin/ois" install riley/greeter --user --yes >/dev/null 2>&1; then
         check "remote install (synthesized conf) runs" \
             "$("$HOMEDIR/.local/bin/greeter" 2>/dev/null)" "greeter remote"
@@ -280,7 +277,7 @@ EOF
         && bad "install of nonexistent repo reported success"
     printf '%s' "$out" | grep -q "E-HTTP" && ok "nonexistent repo yields structured E-HTTP" \
                                           || bad "no E-HTTP for missing repo" "$out"
-    kill $SRV 2>/dev/null; wait $SRV 2>/dev/null || :
+    ois_test_http_stop "$SRV"
     export OIS_OFFLINE=1
 else
     printf '  SKIP  python3 missing\n'

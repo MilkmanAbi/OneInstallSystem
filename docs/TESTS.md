@@ -32,6 +32,9 @@ suite to 15 minutes, and keeps complete logs in `test-results/`. Nonzero
 suite status, a missing success summary, or an unexpected coverage skip
 fails the job. Only the privileged NixOS marker test may skip on an
 unprivileged runner.
+Each job stops at its first failed suite so logs become available promptly;
+the platform matrix continues independently. Adversarial HTTP checks run
+before the slower 1,000-claim stress suite.
 
 Required tools: Python 3, curl, CMake, a C compiler, make, pkg-config,
 timeout, dash, and zlib headers/library. GNU timeout is supplied on hosts
@@ -39,8 +42,8 @@ that lack it without replacing native sed, awk, grep, find, tar or sh.
 When a BSD base system provides zlib without zlib.pc, the driver compiles
 and runs a real libz probe before creating local pkg-config metadata.
 
-Run suites and shells sequentially within a machine: fixtures share fixed
-loopback HTTP ports and some attack marker names. Parallelism belongs
+Run suites and shells sequentially within a machine: fixtures share some
+attack marker names and crash-process names. Parallelism belongs
 between isolated CI jobs, not between suites sharing /tmp.
 
 ## Workflow
@@ -58,6 +61,15 @@ and a weekly schedule. No platform job is allowed to fail silently.
 Jobs retain per-suite logs as artifacts even after failures. The lint job
 checks production entry points/modules and the CI driver with ShellCheck.
 All shell scripts, including the examples, receive syntax checks.
+
+## Resource limits
+
+Only standard GitHub-hosted runner labels are used; larger/XL runner labels
+are excluded. BSD VMs explicitly use two vCPUs. Make/CMake builds are capped
+at two parallel jobs with OIS_MAX_JOBS=2, with matching Cargo/Go limits.
+Every suite has a 15-minute deadline and is forcibly killed after a further
+30 seconds if it ignores termination. Jobs have explicit 10/45/60-minute
+limits. Log artifacts expire after three days.
 
 ## Audit fixes
 
@@ -91,6 +103,11 @@ All shell scripts, including the examples, receive syntax checks.
 - Installed-runtime detection compares physical directory paths so doubled
   slashes and symlink aliases cannot make a global shim inherit project scope.
   End-to-end regressions require refusal and absence of a decoy app record.
+- HTTP fixtures use OS-assigned loopback ports, verify readiness with an
+  actual request, retain server diagnostics, and track every server for
+  cleanup. Fixed ports and one-second startup assumptions are eliminated.
+- NetBSD uses its native cc/c++ toolchain instead of assuming clang exists.
+  CI clears host compiler overrides and bypasses proxies for loopback.
 
 ## Limits of the evidence
 

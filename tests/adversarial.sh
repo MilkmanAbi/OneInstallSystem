@@ -10,6 +10,7 @@ SRC="$HERE/../ois"
 LAB="${TMPDIR:-/tmp}/ois-adv.$$"
 HOMEDIR="$LAB/home"
 PASS=0 FAIL=0
+. "$HERE/http.sh"
 
 export OIS_ROOT="$LAB/store" HOME="$HOMEDIR"
 export XDG_DATA_HOME="$HOMEDIR/.local/share" XDG_CONFIG_HOME="$HOMEDIR/.config"
@@ -387,9 +388,9 @@ ATOM
     printf '#!/bin/sh\necho ok\n' > "$LAB/rsrc/evil-repo-v1.0.0/repo.src"
     printf 'all:\n\tcp repo.src repo && chmod +x repo\n' > "$LAB/rsrc/evil-repo-v1.0.0/Makefile"
     ( cd "$LAB/rsrc" && tar -czf "$M/archive/refs/tags/v1.0.0.tar.gz" evil-repo-v1.0.0 )
-    ( cd "$LAB/mock" && exec python3 -m http.server 8977 --bind 127.0.0.1 ) >/dev/null 2>&1 &
-    SRV=$!; sleep 1
-    export OIS_GITHUB_BASE="http://127.0.0.1:8977" OIS_GITHUB_API="http://127.0.0.1:8977/api"
+    ois_test_http_start "$LAB/mock" tags
+    SRV=$OIS_TEST_HTTP_PID
+    export OIS_GITHUB_BASE="$OIS_TEST_HTTP_URL" OIS_GITHUB_API="$OIS_TEST_HTTP_URL/api"
     rm -f /tmp/ois-adv-tag-pwned
     # The channel filter should pick v1.0.0 (no prerelease suffix),
     # not the injected tag
@@ -402,7 +403,7 @@ ATOM
     [ -e /tmp/ois-adv-tag-pwned ] && { bad "tag name executed as shell"; rm -f /tmp/ois-adv-tag-pwned; } \
         || ok "hostile tag name is inert (no eval)"
     check "latest_tag picks the clean tag, not the hostile one" "$tag" "v1.0.0"
-    kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null || :
+    ois_test_http_stop "$SRV"
 
     # 20. Downgrade attack: feed returns only an older version (new server)
     M_DG="$LAB/mock_dg/dg/repo"
@@ -412,9 +413,9 @@ ATOM
 <entry><id>tag:github.com,2008:Repository/99/v0.5.0</id></entry>
 </feed>
 ATOM
-    ( cd "$LAB/mock_dg" && exec python3 -m http.server 8982 --bind 127.0.0.1 ) >/dev/null 2>&1 &
-    SRV_DG=$!; sleep 1
-    export OIS_GITHUB_BASE="http://127.0.0.1:8982" OIS_GITHUB_API="http://127.0.0.1:8982/api"
+    ois_test_http_start "$LAB/mock_dg" downgrade
+    SRV_DG=$OIS_TEST_HTTP_PID
+    export OIS_GITHUB_BASE="$OIS_TEST_HTTP_URL" OIS_GITHUB_API="$OIS_TEST_HTTP_URL/api"
     mkproj dgtest
     printf 'app_name = dgtest\nbinary = dgtest\ngithub = dg/repo\n' > "$LAB/src/dgtest/ois/ois.conf"
     $SH "$LAB/src/dgtest/ois/ois.sh" install --user --yes >/dev/null 2>&1
@@ -425,7 +426,7 @@ ATOM
     uc_rc=$?
     [ "$uc_rc" = 1 ] && ok "downgrade not offered when remote < local" \
                       || bad "downgrade offered (rc=$uc_rc, remote=${OIS_UPD_REMOTE:-?}, local=${OIS_UPD_LOCAL:-?})"
-    kill "$SRV_DG" 2>/dev/null; wait "$SRV_DG" 2>/dev/null || :
+    ois_test_http_stop "$SRV_DG"
     export OIS_OFFLINE=1
 else
     printf '  SKIP  python3 missing for network tests\n'
@@ -472,9 +473,9 @@ if command -v python3 >/dev/null 2>&1; then
     cat > "$M2/releases.atom" <<'ATOM'
 <feed><entry><id>tag:github.com,2008:Repository/2/v1.0.0</id></entry></feed>
 ATOM
-    ( cd "$LAB/mock2" && exec python3 -m http.server 8978 --bind 127.0.0.1 ) >/dev/null 2>&1 &
-    SRV2=$!; sleep 1
-    export OIS_GITHUB_BASE="http://127.0.0.1:8978" OIS_GITHUB_API="http://127.0.0.1:8978/api"
+    ois_test_http_start "$LAB/mock2" checksum
+    SRV2=$OIS_TEST_HTTP_PID
+    export OIS_GITHUB_BASE="$OIS_TEST_HTTP_URL" OIS_GITHUB_API="$OIS_TEST_HTTP_URL/api"
     mkproj chkapp
     printf 'app_name = chkapp\nbinary = chkapp\ngithub = chk/repo\n' > "$LAB/src/chkapp/ois/ois.conf"
     $SH "$LAB/src/chkapp/ois/ois.sh" install --user --yes >/dev/null 2>&1
@@ -487,7 +488,7 @@ ATOM
     check "version unchanged after checksum rejection" \
         "$(ois_meta_get chkapp version)" "0.9.0"
 
-    kill "$SRV2" 2>/dev/null; wait "$SRV2" 2>/dev/null || :
+    ois_test_http_stop "$SRV2"
     export OIS_OFFLINE=1
 else
     printf '  SKIP  python3 missing for checksum test\n'
@@ -570,9 +571,9 @@ if command -v python3 >/dev/null 2>&1; then
 ATOM
     # Empty file as the "asset"
     : > "$M3/releases/download/v1.0.0/truncapp-1.0.0-$PLAT.tar.gz"
-    ( cd "$LAB/mock3" && exec python3 -m http.server 8979 --bind 127.0.0.1 ) >/dev/null 2>&1 &
-    SRV3=$!; sleep 1
-    export OIS_GITHUB_BASE="http://127.0.0.1:8979" OIS_GITHUB_API="http://127.0.0.1:8979/api"
+    ois_test_http_start "$LAB/mock3" truncated
+    SRV3=$OIS_TEST_HTTP_PID
+    export OIS_GITHUB_BASE="$OIS_TEST_HTTP_URL" OIS_GITHUB_API="$OIS_TEST_HTTP_URL/api"
     mkproj truncapp
     printf 'app_name = truncapp\nbinary = truncapp\ngithub = trunc/repo\n' > "$LAB/src/truncapp/ois/ois.conf"
     $SH "$LAB/src/truncapp/ois/ois.sh" install --user --yes >/dev/null 2>&1
@@ -589,7 +590,7 @@ ATOM
         "$(ois_meta_get truncapp version)" "0.9.0"
     check "binary unchanged after truncated download" \
         "$("$HOMEDIR/.local/bin/truncapp")" 'I am truncapp'
-    kill "$SRV3" 2>/dev/null; wait "$SRV3" 2>/dev/null || :
+    ois_test_http_stop "$SRV3"
     export OIS_OFFLINE=1
 else
     printf '  SKIP  python3 missing\n'
