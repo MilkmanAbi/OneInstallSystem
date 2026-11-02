@@ -27,7 +27,7 @@ ois_test_http_start() {
     _th_ready="$LAB/$2.ready"
     _th_log="$LAB/$2.http.log"
     rm -f "$_th_ready"
-    python3 "$HERE/http_server.py" "$1" "$_th_ready" > "$_th_log" 2>&1 &
+    python3 -u "$HERE/http_server.py" "$1" "$_th_ready" > "$_th_log" 2>&1 &
     OIS_TEST_HTTP_PID=$!
     OIS_TEST_HTTP_PIDS="$OIS_TEST_HTTP_PIDS $OIS_TEST_HTTP_PID"
     _th_attempt=0
@@ -43,6 +43,8 @@ ois_test_http_start() {
         _th_attempt=$(( _th_attempt + 1 ))
     done
     printf 'HTTP fixture failed to become ready: %s\n' "$2" >&2
+    command -v python3 >&2
+    ps -p "$OIS_TEST_HTTP_PID" -o pid,ppid,args >&2 || :
     cat "$_th_log" >&2
     exit 1
 }
