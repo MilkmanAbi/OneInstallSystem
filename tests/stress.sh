@@ -218,11 +218,13 @@ binary = cmapp
 system = cmake
 cmake_opts = -DGREETING=ois-built
 EOF
-    if timeout 120 $SH "$P/ois/ois.sh" install --user --yes >/dev/null 2>&1; then
+    if timeout 120 $SH "$P/ois/ois.sh" install --user --yes > "$LAB/cmake-install.log" 2>&1; then
         check "cmake app builds, installs, runs with cmake_opts applied" \
             "$("$HOMEDIR/.local/bin/cmapp")" "cmapp says ois-built"
     else
         bad "cmake install failed"
+        cat "$LAB/cmake-install.log"
+        [ ! -f "$OIS_ROOT/apps/cmapp/build.log" ] || cat "$OIS_ROOT/apps/cmapp/build.log"
     fi
     # failure diagnostics: break the source, reinstall, expect E-BUILD + log
     # BSD make can compare mtimes at whole-second resolution.
@@ -337,9 +339,12 @@ printf '%s' "$out" | grep -q "E-STATE" && ok "double uninstall yields E-STATE" \
 printf -- '\n-- doctor on a healthy store --\n'
 # The global shim has no project scope: running it from a directory that
 # happens to contain an unrelated ois.conf must NOT install that app.
-( cd "$HERE/.." && out="$($SH "$HOMEDIR/.local/bin/ois" install --user --yes 2>&1)" ) \
+mkproj unrelated
+( cd "$LAB/src/unrelated" && out="$($SH "$HOMEDIR/.local/bin/ois" install --user --yes 2>&1)" ) \
     && bad "bare 'ois install' picked up an unrelated ois.conf" \
     || ok "global shim does not inherit \$PWD project scope"
+ois_app_exists unrelated && bad "global shim created an unrelated app record" \
+    || ok "global shim leaves unrelated project uninstalled"
 dout="$($SH "$HOMEDIR/.local/bin/ois" doctor 2>&1)"; drc=$?
 if [ "$drc" = 0 ]; then ok "doctor exits 0 on a healthy store"
 else bad "doctor reported problems on a healthy store" \

@@ -75,7 +75,7 @@ All shell scripts, including the examples, receive syntax checks.
   existence or the runner's privilege.
 - The newline fixture builds the intended executable and checks parsed
   content. The old fixture could pass merely because installation failed.
-- Truncated-download checks require failure, evidence of extraction, and
+- Truncated-download checks require failure, evidence of payload validation, and
   preservation of both installed version and binary.
 - Portability greps use POSIX character classes and extended alternation.
 - Literal alias-table separators are quoted in parameter-expansion patterns
@@ -88,6 +88,9 @@ All shell scripts, including the examples, receive syntax checks.
 - The CMake failure fixture crosses a whole-second timestamp boundary for
   BSD make. Empty archives must fail payload validation; BSD tar may accept
   an empty input and leave the missing-executable check to OIS.
+- Installed-runtime detection compares physical directory paths so doubled
+  slashes and symlink aliases cannot make a global shim inherit project scope.
+  End-to-end regressions require refusal and absence of a decoy app record.
 
 ## Limits of the evidence
 

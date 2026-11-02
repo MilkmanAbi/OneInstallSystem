@@ -161,7 +161,7 @@ jobs:
       - uses: vmactions/netbsd-vm@v1
         with:
           usesh: true
-          prepare: /usr/sbin/pkg_add cmake curl python312 pkgconf dash bash coreutils
+          prepare: /usr/sbin/pkg_add cmake curl python312 pkgconf dash bash coreutils gmake
           run: |
             set -eu
             export PATH="/usr/pkg/bin:/usr/pkg/sbin:$PATH"
@@ -188,7 +188,7 @@ jobs:
           OIS_STRESS_ROUNDS: '3'
         run: |
           umask 077
-          export TMPDIR="$RUNNER_TEMP/ois scratch"
+          export TMPDIR="$RUNNER_TEMP/ois scratch/"
           mkdir -p "$TMPDIR"
           sh tests/ci.sh dash
       - uses: actions/upload-artifact@v4

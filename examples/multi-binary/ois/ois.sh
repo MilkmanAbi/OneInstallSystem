@@ -225,8 +225,13 @@ _ois_shim_gc() {
 # True when this ois.sh is the store's installed runtime rather than a
 # copy sitting inside somebody's project.
 _ois_self_is_runtime() {
-    case "$OIS_SELF_DIR" in
-        "$(ois_runtime_dir)"/*) return 0 ;;
+    # Compare physical paths: TMPDIR may have a trailing slash or refer
+    # through /var -> /private/var on macOS. Textual prefixes can differ
+    # even when they name the same installed runtime.
+    _sir_root="$(cd "$(ois_runtime_dir)" 2>/dev/null && pwd -P)" || return 1
+    _sir_self="$(cd "$OIS_SELF_DIR" 2>/dev/null && pwd -P)" || return 1
+    case "$_sir_self" in
+        "$_sir_root"/*) return 0 ;;
         *) return 1 ;;
     esac
 }

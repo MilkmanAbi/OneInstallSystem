@@ -218,6 +218,23 @@ cp "$HOME/.local/bin/alpha" /dev/null 2>/dev/null || true
 got="$($SH "$LAB/src/alpha/ois/ois.sh" why "$HOME/.local/bin/alpha" 2>/dev/null | grep -c alpha || true)"
 [ "$got" -ge 1 ] && ok "ois why resolves a path to its owning app" || bad "ois why failed"
 
+# Runtime identity must survive alternate spellings of the same store.
+# A global shim never acquires project scope from its working directory.
+mkproj decoy
+if (cd "$LAB/src/decoy" && OIS_ROOT="$OIS_ROOT/" $SH "$HOME/.local/bin/ois" install --user --yes >/dev/null 2>&1); then
+    bad "trailing-slash store acquired project scope"
+else
+    ok "trailing-slash store preserves global shim scope"
+fi
+ois_app_exists decoy && bad "trailing-slash store installed decoy" || ok "no decoy record from trailing-slash store"
+ln -s "$OIS_ROOT" "$LAB/store-alias"
+if (cd "$LAB/src/decoy" && OIS_ROOT="$LAB/store-alias" $SH "$HOME/.local/bin/ois" install --user --yes >/dev/null 2>&1); then
+    bad "symlinked store acquired project scope"
+else
+    ok "symlinked store preserves global shim scope"
+fi
+ois_app_exists decoy && bad "symlinked store installed decoy" || ok "no decoy record from symlinked store"
+
 # ---------------------------------------------------------------------
 printf '\n=== %s passed, %s failed ===\n\n' "$PASS" "$FAIL"
 rm -rf "$LAB"
