@@ -106,6 +106,9 @@ limits. Log artifacts expire after three days.
 - HTTP fixtures use OS-assigned loopback ports, verify readiness with an
   actual request, retain server diagnostics, and track every server for
   cleanup. Fixed ports and one-second startup assumptions are eliminated.
+- The loopback server bypasses HTTPServer's reverse-DNS lookup, which hung
+  in macOS getfqdn(). A preflight regression serves a real payload while
+  getfqdn is patched to fail, ensuring the fixture has no DNS dependency.
 - NetBSD uses its native cc/c++ toolchain instead of assuming clang exists.
   CI clears host compiler overrides and bypasses proxies for loopback.
 

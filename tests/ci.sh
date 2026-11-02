@@ -14,6 +14,11 @@ for tool in python3 curl cmake cc make pkg-config timeout dash; do
     command -v "$tool" >/dev/null 2>&1 || { echo "Missing required tool: $tool" >&2; exit 1; }
 done
 mkdir -p test-results
+if ! timeout -k 5 30 python3 -m unittest discover -s tests -p test_http_server.py > test-results/http-fixture.log 2>&1; then
+    cat test-results/http-fixture.log
+    exit 1
+fi
+cat test-results/http-fixture.log
 # Some BSD base systems ship libz and headers without zlib.pc. Verify the
 # real library first, then describe it for the positive pkg-config probe.
 if ! pkg-config --exists zlib; then
