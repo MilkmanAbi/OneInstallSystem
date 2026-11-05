@@ -1,4 +1,4 @@
-# OIS — OneInstallSystem
+# OIS — GitHub Repo to App
 
 **v4.1.0** · pure POSIX `sh` · Linux · macOS · FreeBSD · OpenBSD · NetBSD · Termux/Android
 
